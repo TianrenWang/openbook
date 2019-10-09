@@ -146,14 +146,14 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder):
             d = d.repeat()
             # d = d.shuffle(buffer_size=100)
 
-        d = d.apply(
-            tf.contrib.data.map_and_batch(
-                lambda record: _decode_record(record, name_to_features),
-                batch_size=batch_size,
-                drop_remainder=drop_remainder))
+        # d = d.apply(
+        #     tf.contrib.data.map_and_batch(
+        #         lambda record: _decode_record(record, name_to_features),
+        #         batch_size=batch_size,
+        #         drop_remainder=drop_remainder))
 
-        # d = d.map(lambda record: _decode_record(record, name_to_features)).batch(batch_size=batch_size,
-        #                                                                          drop_remainder=drop_remainder)
+        d = d.map(lambda record: _decode_record(record, name_to_features)).batch(batch_size=batch_size,
+                                                                                 drop_remainder=drop_remainder)
 
         return d
 
