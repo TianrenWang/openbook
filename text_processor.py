@@ -1,9 +1,15 @@
 import numpy as np
 import tensorflow_datasets as tfds
+import tensorflow as tf
 from sklearn.utils import shuffle
 import os
 
-def text_processor(data_path):
+
+def create_int_feature(values):
+    f = tf.train.Feature(int64_list=tf.train.Int64List(value=list(values)))
+    return f
+
+def text_processor(data_path, training_file):
     filepath = data_path + "/" + os.listdir(data_path)[0]
 
     data = open(filepath, "r")
@@ -41,25 +47,35 @@ def text_processor(data_path):
 
     # Create a list of encoded abstracts
     encoded_facts = []
-    processed_facts = []
 
     # lengths = [0] * 200
 
-    for fact in facts:
-        encoded_fact = encode(fact)
-        # lengths[len(encoded_fact)] += 1
-        fact_length = len(encoded_fact)
-        padding = MAX_LENGTH - fact_length
+    if not os.path.exists(training_file):
 
-        if (padding >= 0):
-            encoded_facts.append(np.pad(encoded_fact, (0, padding), 'constant'))
-            processed_facts.append(fact)
+        writer = tf.python_io.TFRecordWriter(training_file)
+
+        for fact in facts:
+            encoded_fact = encode(fact)
+            # lengths[len(encoded_fact)] += 1
+            fact_length = len(encoded_fact)
+            padding = MAX_LENGTH - fact_length
+
+            if (padding >= 0):
+                feature = np.pad(encoded_fact, (0, padding), 'constant')
+                example = {}
+                example["input_ids"] = create_int_feature(feature)
+                encoded_facts.append(feature)
+
+                tf_example = tf.train.Example(features=tf.train.Features(feature=example))
+                writer.write(tf_example.SerializeToString())
+
+        writer.close()
 
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):
     #     print(str(i) + ": " + str(length))
 
-    return shuffle(np.array(encoded_facts)), np.array(processed_facts), vocab_size, tokenizer
+    return shuffle(np.array(encoded_facts)), vocab_size, tokenizer
 
 
 def get_tokenizer(texts):

@@ -15,11 +15,8 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import functools
-import os
 
 import tensorflow as tf
-import numpy as np
 
 import transformer_model
 import text_processor
@@ -28,6 +25,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 INPUT_TENSOR_NAME = "inputs"
 SIGNATURE_NAME = "serving_default"
+training_file = "training.tfrecords"
 
 HEIGHT = 32
 WIDTH = 32
@@ -53,7 +51,9 @@ tf.enable_eager_execution()
 
 
 def model_fn(features, labels, mode, params):
-    facts = features["facts"]
+    facts = features["input_ids"]
+
+    print("facts: " + str(facts))
 
     #tokenizer = text_processor.get_tokenizer(params['texts'])
     vocab_size = params['vocab_size'] + 2
@@ -109,6 +109,56 @@ def model_fn(features, labels, mode, params):
         loss=loss,
         train_op=train_op)
 
+def file_based_input_fn_builder(input_file, is_training, drop_remainder):
+
+    name_to_features = {
+      "input_ids": tf.FixedLenFeature([40], tf.int64),
+    }
+
+    tf.logging.info("Input tfrecord file {}".format(input_file))
+
+    def _decode_record(record, name_to_features):
+        """Decodes a record to a TensorFlow example."""
+        example = tf.parse_single_example(record, name_to_features)
+
+        # tf.Example only supports tf.int64, but the TPU only supports tf.int32.
+        # So cast all int64 to int32.
+        for name in list(example.keys()):
+            t = example[name]
+        if t.dtype == tf.int64:
+            t = tf.cast(t, tf.int32)
+            example[name] = t
+
+        return example
+
+    def input_fn(params):
+        """The actual input function."""
+        if is_training:
+            batch_size = 128
+        else:
+            batch_size = 128
+
+        # For training, we want a lot of parallel reading and shuffling.
+        # For eval, we want no shuffling and parallel reading doesn't matter.
+        d = tf.data.TFRecordDataset(input_file)
+        if is_training:
+            d = d.shuffle(buffer_size=1024)
+            d = d.repeat()
+            # d = d.shuffle(buffer_size=100)
+
+        d = d.apply(
+            tf.contrib.data.map_and_batch(
+                lambda record: _decode_record(record, name_to_features),
+                batch_size=batch_size,
+                drop_remainder=drop_remainder))
+
+        # d = d.map(lambda record: _decode_record(record, name_to_features)).batch(batch_size=batch_size,
+        #                                                                          drop_remainder=drop_remainder)
+
+        return d
+
+    return input_fn
+
 
 def train(model_dir, data_dir, train_steps):
 
@@ -121,27 +171,22 @@ def train(model_dir, data_dir, train_steps):
 
     logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=10)
 
-    encoded_facts, facts, vocab_size, tokenizer = text_processor.text_processor(data_dir)
-    #encoded_facts, vocab_size = text_processor.text_processor(data_dir)
+    encoded_facts, vocab_size, tokenizer = text_processor.text_processor(data_dir, training_file)
 
-    train_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"facts": encoded_facts[:-500]},
-        batch_size=64,
-        num_epochs=None,
-        shuffle=True)
+    # train_input_fn = tf.estimator.inputs.numpy_input_fn(
+    #     x={"facts": encoded_facts[:-500]},
+    #     batch_size=64,
+    #     num_epochs=None,
+    #     shuffle=True)
+
+    train_input_fn = file_based_input_fn_builder(
+        input_file=training_file,
+        is_training=True,
+        drop_remainder=True)
 
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params={'vocab_size': vocab_size},
                                        config=config)
 
-    # temp_input_fn = functools.partial(train_input_fn, data_dir)
-
-    # train_spec = tf.estimator.TrainSpec(train_input_fn, max_steps=train_steps)
-
-    # exporter = tf.estimator.LatestExporter('Servo', serving_input_receiver_fn=serving_input_fn)
-    # temp_eval_fn = functools.partial(eval_input_fn, data_dir)
-    # eval_spec = tf.estimator.EvalSpec(temp_eval_fn, steps=1, exporters=exporter)
-
-    # tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
     estimator.train(
         input_fn=train_input_fn,
         steps=train_steps)#,
@@ -161,7 +206,7 @@ def train(model_dir, data_dir, train_steps):
 
     results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction'])
 
-    for result in results:
+    for result in results[0]:
         output_sentence = result['prediction']
         print("result: " + str(output_sentence))
         print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
