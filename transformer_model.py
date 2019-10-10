@@ -41,7 +41,7 @@ def TED_generator(vocab_size):
 
         # add extra dimensions so that we can add the padding
         # to the attention logits.
-        return tf.expand_dim(tf.expand_dim(seq, 1), 1)  # (batch_size, 1, 1, seq_len)
+        return tf.expand_dims(tf.expand_dims(seq, 1), 1)  # (batch_size, 1, 1, seq_len)
 
 
 
