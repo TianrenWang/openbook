@@ -41,7 +41,7 @@ def TED_generator(vocab_size):
 
         # add extra dimensions so that we can add the padding
         # to the attention logits.
-        return seq[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
+        return tf.expand_dim(tf.expand_dim(seq, 1), 1)  # (batch_size, 1, 1, seq_len)
 
 
 
@@ -454,7 +454,7 @@ def TED_generator(vocab_size):
             return final_output, attention_weights
 
     def model(fact, is_training):
-        predicted = fact[:, :-1]
+        predicted = tf.slice(fact, [0,0], [-1, fact.get_shape()[1]-1])
         """Constructs the ResNet model given the inputs."""
 
         enc_padding_mask, combined_mask, dec_padding_mask = create_masks(fact, predicted)
