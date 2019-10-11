@@ -237,25 +237,44 @@ if __name__ == '__main__':
     args_parser.add_argument(
         '--data-dir',
         default='/data',
-        type=str,
-        help='The directory where the CIFAR-10 input data is stored. Default: /opt/ml/input/data/training. This '
-             'directory corresponds to the SageMaker channel named \'training\', which was specified when creating '
-             'our training job on SageMaker')
+        type=str)
 
     # For more information:
     # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-inference-code.html
     args_parser.add_argument(
         '--model-dir',
         default='/model',
-        type=str,
-        help='The directory where the model will be stored. Default: /opt/ml/model. This directory should contain all '
-             'final model artifacts as Amazon SageMaker copies all data within this directory as a single object in '
-             'compressed tar format.')
+        type=str)
 
     args_parser.add_argument(
         '--train-steps',
         type=int,
-        default=100,
-        help='The number of steps to use for training.')
+        default=100)
+
+    args_parser.add_argument(
+        '--dropout',
+        type=float,
+        default=0.1)
+
+    args_parser.add_argument(
+        '--heads',
+        type=int,
+        default=4)
+
+    args_parser.add_argument(
+        '--layers',
+        type=int,
+        default=3)
+
+    args_parser.add_argument(
+        '--depths',
+        type=int,
+        default=128)
+
+    args_parser.add_argument(
+        '--feedforward',
+        type=int,
+        default=128)
+
     args = args_parser.parse_args()
     main(**vars(args))

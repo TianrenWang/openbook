@@ -459,14 +459,14 @@ def TED_generator(vocab_size):
 
         enc_padding_mask, combined_mask, dec_padding_mask = create_masks(fact, predicted)
 
-        num_layers = 4
+        num_layers = 2
         d_model = 128
         dff = 128
-        num_heads = 1
+        num_heads = 4
         prompt_length = 32
 
         # vocab_size = int(tokenizer.vocab_size + 2)
-        dropout_rate = 0.1
+        dropout_rate = 0.3
 
         transformer = Transformer(num_layers, d_model, num_heads, dff, vocab_size, dropout_rate)
         predictions, _ = transformer(fact, predicted,
