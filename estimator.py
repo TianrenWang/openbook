@@ -251,30 +251,30 @@ if __name__ == '__main__':
         type=int,
         default=100)
 
-    args_parser.add_argument(
-        '--dropout',
-        type=float,
-        default=0.1)
-
-    args_parser.add_argument(
-        '--heads',
-        type=int,
-        default=4)
-
-    args_parser.add_argument(
-        '--layers',
-        type=int,
-        default=3)
-
-    args_parser.add_argument(
-        '--depths',
-        type=int,
-        default=128)
-
-    args_parser.add_argument(
-        '--feedforward',
-        type=int,
-        default=128)
+    # args_parser.add_argument(
+    #     '--dropout',
+    #     type=float,
+    #     default=0.1)
+    #
+    # args_parser.add_argument(
+    #     '--heads',
+    #     type=int,
+    #     default=4)
+    #
+    # args_parser.add_argument(
+    #     '--layers',
+    #     type=int,
+    #     default=3)
+    #
+    # args_parser.add_argument(
+    #     '--depths',
+    #     type=int,
+    #     default=128)
+    #
+    # args_parser.add_argument(
+    #     '--feedforward',
+    #     type=int,
+    #     default=128)
 
     args = args_parser.parse_args()
     main(**vars(args))
