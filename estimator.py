@@ -73,7 +73,7 @@ def model_fn(features, labels, mode, params):
         return tf.reduce_mean(loss_)
 
     # Add weight decay to the loss.
-    loss = loss_function(facts[:, 1:], logits)
+    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
