@@ -2,4 +2,4 @@ data/*
 model/*
 .idea/*
 __pycache__/*
-training.tfrecords
+encoded_data/*

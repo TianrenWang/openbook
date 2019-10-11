@@ -53,8 +53,6 @@ tf.enable_eager_execution()
 def model_fn(features, labels, mode, params):
     facts = features["input_ids"]
 
-    print("facts: " + str(facts))
-
     #tokenizer = text_processor.get_tokenizer(params['texts'])
     vocab_size = params['vocab_size'] + 2
 
@@ -82,6 +80,7 @@ def model_fn(features, labels, mode, params):
     tf.summary.scalar('loss', loss)
 
     predictions = {
+        'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2)
     }
 
@@ -109,10 +108,10 @@ def model_fn(features, labels, mode, params):
         loss=loss,
         train_op=train_op)
 
-def file_based_input_fn_builder(input_file, is_training, drop_remainder):
+def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_training, drop_remainder):
 
     name_to_features = {
-      "input_ids": tf.FixedLenFeature([40], tf.int64),
+      "input_ids": tf.FixedLenFeature([sequence_length], tf.int64),
     }
 
     tf.logging.info("Input tfrecord file {}".format(input_file))
@@ -133,14 +132,14 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder):
 
     def input_fn(params):
         """The actual input function."""
-        if is_training:
-            batch_size = 128
-        else:
-            batch_size = 128
+        # if is_training:
+        #     batch_size = 128
+        # else:
+        #     batch_size = 128
 
         # For training, we want a lot of parallel reading and shuffling.
         # For eval, we want no shuffling and parallel reading doesn't matter.
-        d = tf.data.TFRecordDataset(input_file)
+        d = tf.data.TFRecordDataset("encoded_data/" + input_file + ".tfrecords")
         if is_training:
             d = d.shuffle(buffer_size=1024)
             d = d.repeat()
@@ -161,17 +160,17 @@ def file_based_input_fn_builder(input_file, is_training, drop_remainder):
 
 
 def train(model_dir, data_dir, train_steps):
-
+    seq_len = 48
     mirrored_strategy = tf.distribute.MirroredStrategy()
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
 
     # Set up logging for predictions
-    tensors_to_log = {"loss": "loss"}
+    # tensors_to_log = {"loss": "loss"}
+    #
+    # logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=10)
 
-    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=10)
-
-    encoded_facts, vocab_size, tokenizer = text_processor.text_processor(data_dir, training_file)
+    vocab_size, tokenizer, sample_data = text_processor.text_processor(data_dir, seq_len, "encoded_data")
 
     # train_input_fn = tf.estimator.inputs.numpy_input_fn(
     #     x={"facts": encoded_facts[:-500]},
@@ -180,7 +179,9 @@ def train(model_dir, data_dir, train_steps):
     #     shuffle=True)
 
     train_input_fn = file_based_input_fn_builder(
-        input_file=training_file,
+        input_file="training",
+        sequence_length=seq_len,
+        batch_size=128,
         is_training=True,
         drop_remainder=True)
 
@@ -192,26 +193,37 @@ def train(model_dir, data_dir, train_steps):
         steps=train_steps)#,
         #hooks=[logging_hook])
 
-    eval_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"facts": encoded_facts[-500:]},
-        num_epochs=1,
-        shuffle=False)
+    eval_input_fn = file_based_input_fn_builder(
+        input_file="testing",
+        sequence_length=seq_len,
+        batch_size=1,
+        is_training=False,
+        drop_remainder=True)
 
     print("Evaluation loss: " + str(estimator.evaluate(input_fn=eval_input_fn)))
 
-    pred_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"facts": encoded_facts[-1]},
-        num_epochs=1,
-        shuffle=False)
+    pred_input_fn = file_based_input_fn_builder(
+        input_file="predict",
+        sequence_length=seq_len,
+        batch_size=1,
+        is_training=False,
+        drop_remainder=True)
 
-    results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction'])
+    print("Started predicting")
 
-    for result in results[0]:
+    results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original'])
+
+    print("Ended predicting")
+
+    for result in results:
         output_sentence = result['prediction']
+        input_sentence = result['original']
         print("result: " + str(output_sentence))
         print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
-        print("original: " + str(tokenizer.decode([i for i in encoded_facts[-1] if i < tokenizer.vocab_size])))
+        print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
         break
+
+    print("Ended showing result")
 
 
 def main(model_dir, data_dir, train_steps):
