@@ -22,5 +22,16 @@ TPU_NAME=
 python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
-  --train_steps=4000 \
+  --train_steps=20000 \
+  --dropout=0.5 \
+  --heads=4 \
+  --seq_len=48 \
+  --batch_size=128 \
+  --layers=2 \
+  --depth=128 \
+  --feedforward=128 \
+  --train=True \
+  --evaluate=True \
+  --predict=True \
+
   $@
