@@ -20,7 +20,7 @@ GS_MODEL_DIR=${GS_ROOT}/experiment/race
 TPU_NAME=
 
 python3 estimator.py \
-  --data-dir=data/ \
-  --model-dir=model/ \
-  --train-steps=4000 \
+  --data_dir=data/ \
+  --model_dir=model/ \
+  --train_steps=4000 \
   $@

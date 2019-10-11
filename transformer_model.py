@@ -5,7 +5,7 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 
-def TED_generator(vocab_size):
+def TED_generator(vocab_size, FLAGS):
     def get_angles(pos, i, d_model):
         angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
         return pos * angle_rates
@@ -459,16 +459,7 @@ def TED_generator(vocab_size):
 
         enc_padding_mask, combined_mask, dec_padding_mask = create_masks(fact, predicted)
 
-        num_layers = 2
-        d_model = 128
-        dff = 128
-        num_heads = 4
-        prompt_length = 32
-
-        # vocab_size = int(tokenizer.vocab_size + 2)
-        dropout_rate = 0.3
-
-        transformer = Transformer(num_layers, d_model, num_heads, dff, vocab_size, dropout_rate)
+        transformer = Transformer(FLAGS.layers, FLAGS.depth, FLAGS.heads, FLAGS.feedforward, vocab_size, FLAGS.dropout)
         predictions, _ = transformer(fact, predicted,
                                      is_training,
                                      enc_padding_mask,

@@ -21,6 +21,39 @@ import tensorflow as tf
 import transformer_model
 import text_processor
 
+flags = tf.app.flags
+
+# Configuration
+flags.DEFINE_string("data_dir", default="data/",
+      help="data directory")
+flags.DEFINE_string("model_dir", default="model/",
+      help="directory of model")
+flags.DEFINE_integer("train_steps", default=10000,
+      help="number of training steps")
+flags.DEFINE_float("dropout", default=0.3,
+      help="dropout rate")
+flags.DEFINE_integer("heads", default=4,
+      help="number of heads")
+flags.DEFINE_integer("seq_len", default=48,
+      help="length of the each fact")
+flags.DEFINE_integer("batch_size", default=128,
+      help="batch size")
+flags.DEFINE_integer("layers", default=2,
+      help="number of layers")
+flags.DEFINE_integer("depth", default=128,
+      help="the size of the attention layer")
+flags.DEFINE_integer("feedforward", default=128,
+      help="the size of feedforward layer")
+
+flags.DEFINE_bool("train", default=True,
+      help="whether to train")
+flags.DEFINE_bool("evaluate", default=True,
+      help="whether to evaluate")
+flags.DEFINE_bool("predict", default=True,
+      help="whether to predict")
+
+FLAGS = flags.FLAGS
+
 tf.logging.set_verbosity(tf.logging.INFO)
 
 INPUT_TENSOR_NAME = "inputs"
@@ -52,15 +85,11 @@ tf.enable_eager_execution()
 
 def model_fn(features, labels, mode, params):
     facts = features["input_ids"]
-
-    #tokenizer = text_processor.get_tokenizer(params['texts'])
     vocab_size = params['vocab_size'] + 2
 
-    network = transformer_model.TED_generator(vocab_size)
+    network = transformer_model.TED_generator(vocab_size, FLAGS)
 
     logits = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
-    # predictions = tf.argmax(logits, 2)
-    # fake_response = tokenizer.decode([c for c in predictions[0] if c < tokenizer.vocab_size])
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -132,10 +161,6 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
 
     def input_fn(params):
         """The actual input function."""
-        # if is_training:
-        #     batch_size = 128
-        # else:
-        #     batch_size = 128
 
         # For training, we want a lot of parallel reading and shuffling.
         # For eval, we want no shuffling and parallel reading doesn't matter.
@@ -143,13 +168,6 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
         if is_training:
             d = d.shuffle(buffer_size=1024)
             d = d.repeat()
-            # d = d.shuffle(buffer_size=100)
-
-        # d = d.apply(
-        #     tf.contrib.data.map_and_batch(
-        #         lambda record: _decode_record(record, name_to_features),
-        #         batch_size=batch_size,
-        #         drop_remainder=drop_remainder))
 
         d = d.map(lambda record: _decode_record(record, name_to_features)).batch(batch_size=batch_size,
                                                                                  drop_remainder=drop_remainder)
@@ -159,122 +177,74 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
     return input_fn
 
 
-def train(model_dir, data_dir, train_steps):
-    seq_len = 48
+def main(argv=None):
     mirrored_strategy = tf.distribute.MirroredStrategy()
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
 
-    # Set up logging for predictions
-    # tensors_to_log = {"loss": "loss"}
-    #
-    # logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=10)
+    vocab_size, tokenizer, sample_data = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, "encoded_data")
 
-    vocab_size, tokenizer, sample_data = text_processor.text_processor(data_dir, seq_len, "encoded_data")
-
-    # train_input_fn = tf.estimator.inputs.numpy_input_fn(
-    #     x={"facts": encoded_facts[:-500]},
-    #     batch_size=64,
-    #     num_epochs=None,
-    #     shuffle=True)
-
-    train_input_fn = file_based_input_fn_builder(
-        input_file="training",
-        sequence_length=seq_len,
-        batch_size=128,
-        is_training=True,
-        drop_remainder=True)
-
-    estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params={'vocab_size': vocab_size},
+    estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params={'vocab_size': vocab_size},
                                        config=config)
 
-    estimator.train(
-        input_fn=train_input_fn,
-        steps=train_steps)#,
-        #hooks=[logging_hook])
+    if FLAGS.train:
+        print("***************************************")
+        print("Training")
+        print("***************************************")
 
-    eval_input_fn = file_based_input_fn_builder(
-        input_file="testing",
-        sequence_length=seq_len,
-        batch_size=1,
-        is_training=False,
-        drop_remainder=True)
+        train_input_fn = file_based_input_fn_builder(
+            input_file="training",
+            sequence_length=FLAGS.seq_len,
+            batch_size=FLAGS.batch_size,
+            is_training=True,
+            drop_remainder=True)
 
-    print("Evaluation loss: " + str(estimator.evaluate(input_fn=eval_input_fn)))
+        estimator.train(
+            input_fn=train_input_fn,
+            steps=FLAGS.train_steps)
 
-    pred_input_fn = file_based_input_fn_builder(
-        input_file="predict",
-        sequence_length=seq_len,
-        batch_size=1,
-        is_training=False,
-        drop_remainder=True)
+    if FLAGS.evaluate:
+        print("***************************************")
+        print("Evaluating")
+        print("***************************************")
 
-    print("Started predicting")
+        eval_input_fn = file_based_input_fn_builder(
+            input_file="testing",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
 
-    results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original'])
+        print("Evaluation loss: " + str(estimator.evaluate(input_fn=eval_input_fn)))
 
-    print("Ended predicting")
+    if FLAGS.predict:
+        print("***************************************")
+        print("Predicting")
+        print("***************************************")
 
-    for result in results:
-        output_sentence = result['prediction']
-        input_sentence = result['original']
-        print("result: " + str(output_sentence))
-        print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
-        print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-        break
+        pred_input_fn = file_based_input_fn_builder(
+            input_file="predict",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
 
-    print("Ended showing result")
+        print("Started predicting")
 
+        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original'])
 
-def main(model_dir, data_dir, train_steps):
-    train(model_dir, data_dir, train_steps)
+        print("Ended predicting")
+
+        for result in results:
+            output_sentence = result['prediction']
+            input_sentence = result['original']
+            print("result: " + str(output_sentence))
+            print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
+            print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
+            break
+
+        print("Ended showing result")
 
 
 if __name__ == '__main__':
-    args_parser = argparse.ArgumentParser()
-    # For more information:
-    # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-training-algo.html
-    args_parser.add_argument(
-        '--data-dir',
-        default='/data',
-        type=str)
-
-    # For more information:
-    # https://docs.aws.amazon.com/sagemaker/latest/dg/your-algorithms-inference-code.html
-    args_parser.add_argument(
-        '--model-dir',
-        default='/model',
-        type=str)
-
-    args_parser.add_argument(
-        '--train-steps',
-        type=int,
-        default=100)
-
-    # args_parser.add_argument(
-    #     '--dropout',
-    #     type=float,
-    #     default=0.1)
-    #
-    # args_parser.add_argument(
-    #     '--heads',
-    #     type=int,
-    #     default=4)
-    #
-    # args_parser.add_argument(
-    #     '--layers',
-    #     type=int,
-    #     default=3)
-    #
-    # args_parser.add_argument(
-    #     '--depths',
-    #     type=int,
-    #     default=128)
-    #
-    # args_parser.add_argument(
-    #     '--feedforward',
-    #     type=int,
-    #     default=128)
-
-    args = args_parser.parse_args()
-    main(**vars(args))
+    tf.app.run()
