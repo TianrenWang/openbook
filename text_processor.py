@@ -96,7 +96,7 @@ def text_processor(data_path, seq_len, processed_path):
 
 
 def get_tokenizer(texts):
-    input_vocab_size = 2 ** 11
+    input_vocab_size = 2 ** 12
 
     # Create a BPE vocabulary using the abstracts
 
