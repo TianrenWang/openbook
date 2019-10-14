@@ -12,7 +12,7 @@ def create_int_feature(values):
 
 
 def text_processor(data_path, seq_len, processed_path):
-    filepath = data_path + "/" + os.listdir(data_path)[0]
+    filepath = data_path
 
     data = open(filepath, "r")
     line = data.readline()
@@ -22,8 +22,8 @@ def text_processor(data_path, seq_len, processed_path):
     current_index = 0
 
     while line:
-        if line[len(line) - 1] == '.':
-            line = line[:-1]
+        first_period_index = line.find('.')
+        line = line[:first_period_index]
         facts.append(str.encode(line))
         line = data.readline()
         current_index += 1
@@ -84,9 +84,9 @@ def text_processor(data_path, seq_len, processed_path):
 
             writer.close()
 
-    write_tfrecords(facts[:-500], "training")
-    write_tfrecords(facts[-500:], "testing")
-    write_tfrecords(facts[-128:], "predict")
+    write_tfrecords(facts[:-1000], "training")
+    write_tfrecords(facts[-1000:], "testing")
+    write_tfrecords(facts[-100:], "predict")
 
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):

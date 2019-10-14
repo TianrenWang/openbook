@@ -20,12 +20,12 @@ GS_MODEL_DIR=${GS_ROOT}/experiment/race
 TPU_NAME=
 
 python3 estimator.py \
-  --data_dir=data/ \
+  --data_dir=data/p53-50000.txt \
   --model_dir=model/ \
   --train_steps=100000 \
   --dropout=0.5 \
   --heads=4 \
-  --seq_len=40 \
+  --seq_len=128 \
   --batch_size=128 \
   --layers=2 \
   --depth=16 \
