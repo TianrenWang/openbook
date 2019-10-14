@@ -30,6 +30,8 @@ flags.DEFINE_string("model_dir", default="model/",
       help="directory of model")
 flags.DEFINE_integer("train_steps", default=10000,
       help="number of training steps")
+flags.DEFINE_integer("vocab_level", default=13,
+      help="base 2 exponential of the expected vocab size")
 flags.DEFINE_float("dropout", default=0.3,
       help="dropout rate")
 flags.DEFINE_integer("heads", default=4,
@@ -182,7 +184,7 @@ def main(argv=None):
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
 
-    vocab_size, tokenizer, sample_data = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, "encoded_data")
+    vocab_size, tokenizer, sample_data = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
 
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params={'vocab_size': vocab_size},
                                        config=config)

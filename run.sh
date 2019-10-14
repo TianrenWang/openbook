@@ -23,6 +23,7 @@ python3 estimator.py \
   --data_dir=data/p53-50000.txt \
   --model_dir=model/ \
   --train_steps=100000 \
+  --vocab_level=13 \
   --dropout=0.5 \
   --heads=4 \
   --seq_len=128 \

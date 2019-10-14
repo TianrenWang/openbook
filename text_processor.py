@@ -11,7 +11,7 @@ def create_int_feature(values):
     return f
 
 
-def text_processor(data_path, seq_len, processed_path):
+def text_processor(data_path, seq_len, vocab_level, processed_path):
     filepath = data_path
 
     data = open(filepath, "r")
@@ -36,7 +36,7 @@ def text_processor(data_path, seq_len, processed_path):
     data.close()
     shuffle(facts)
 
-    tokenizer = get_tokenizer(facts)
+    tokenizer = get_tokenizer(facts, vocab_level)
 
     # example = tokenizer.encode("An example of camouflage is when something changes color in order to have the same color as its environment")
 
@@ -95,8 +95,8 @@ def text_processor(data_path, seq_len, processed_path):
     return vocab_size, tokenizer, longest_text
 
 
-def get_tokenizer(texts):
-    input_vocab_size = 2 ** 12
+def get_tokenizer(texts, vocab_level):
+    input_vocab_size = 2 ** vocab_level
 
     # Create a BPE vocabulary using the abstracts
 
