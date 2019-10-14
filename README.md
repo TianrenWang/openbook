@@ -1,1 +1,2 @@
 # KnowledgeNet
+The goal of this project is to use modern NLP deep learning techniques to create a knowledge embedding that has properties of graphs while still being easily integratable with NLP applications. The resulting knowledge graph theoretically can improve the performance on NLP reasoning tasks when used in conjunction with graph neural networks that has MAC (Memory, Attention, and Composition) capability. The project is helped by Professor Diana Inkpen of University of Ottawa and Compute Canada for providing precious GPU resources.
