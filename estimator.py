@@ -161,7 +161,7 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
 
         return example
 
-    def input_fn(params):
+    def input_fn():
         """The actual input function."""
 
         # For training, we want a lot of parallel reading and shuffling.
@@ -184,9 +184,9 @@ def main(argv=None):
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
 
-    vocab_size, tokenizer, sample_data = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
+    vocab_size, tokenizer = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
 
-    estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params={'vocab_size': vocab_size},
+    estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params={'vocab_size': tokenizer.vocab_size + 2},
                                        config=config)
 
     if FLAGS.train:
@@ -225,7 +225,7 @@ def main(argv=None):
         print("***************************************")
 
         pred_input_fn = file_based_input_fn_builder(
-            input_file="predict",
+            input_file="testing",
             sequence_length=FLAGS.seq_len,
             batch_size=1,
             is_training=False,

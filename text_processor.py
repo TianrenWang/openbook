@@ -4,6 +4,7 @@ import tensorflow as tf
 from sklearn.utils import shuffle
 from random import shuffle
 import os
+import tensorflow_datasets as tfds
 
 
 def create_int_feature(values):
@@ -12,31 +13,41 @@ def create_int_feature(values):
 
 
 def text_processor(data_path, seq_len, vocab_level, processed_path):
-    filepath = data_path
+    # filepath = data_path
+    #
+    # data = open(filepath, "r")
+    # line = data.readline()
+    # facts = []
+    # longest = len(line)
+    # longest_index = 0
+    # current_index = 0
+    #
+    # while line:
+    #     first_period_index = line.find('.')
+    #     line = line[:first_period_index]
+    #     facts.append(str.encode(line))
+    #     line = data.readline()
+    #     current_index += 1
+    #     if len(line) > longest:
+    #         longest = len(line)
+    #         longest_index = current_index
+    #
+    # longest_text = facts[longest_index]
+    #
+    # data.close()
+    # shuffle(facts)
+    #
+    # tokenizer = get_tokenizer(facts, vocab_level)
 
-    data = open(filepath, "r")
-    line = data.readline()
-    facts = []
-    longest = len(line)
-    longest_index = 0
-    current_index = 0
+    examples, metadata = tfds.load('ted_hrlr_translate/pt_to_en', with_info=True,
+                                   as_supervised=True)
+    train_examples, val_examples = examples['train'], examples['validation']
 
-    while line:
-        first_period_index = line.find('.')
-        line = line[:first_period_index]
-        facts.append(str.encode(line))
-        line = data.readline()
-        current_index += 1
-        if len(line) > longest:
-            longest = len(line)
-            longest_index = current_index
+    train_data = [en.numpy() for pt, en in train_examples]
+    val_data = [en.numpy() for pt, en in val_examples]
 
-    longest_text = facts[longest_index]
-
-    data.close()
-    shuffle(facts)
-
-    tokenizer = get_tokenizer(facts, vocab_level)
+    tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(
+        train_data + val_data, target_vocab_size=2 ** 13)
 
     # example = tokenizer.encode("An example of camouflage is when something changes color in order to have the same color as its environment")
 
@@ -84,15 +95,15 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
 
             writer.close()
 
-    write_tfrecords(facts[:-1000], "training")
-    write_tfrecords(facts[-1000:], "testing")
-    write_tfrecords(facts[-100:], "predict")
+    write_tfrecords(train_data, "training")
+    write_tfrecords(val_data, "testing")
+    # write_tfrecords(facts[-100:], "predict")
 
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):
     #     print(str(i) + ": " + str(length))
 
-    return vocab_size, tokenizer, longest_text
+    return vocab_size, tokenizer
 
 
 def get_tokenizer(texts, vocab_level):
