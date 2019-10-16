@@ -66,7 +66,7 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
         full_path = processed_path + "/" + data_name + ".tfrecords"
         if not os.path.exists(full_path):
 
-            writer = tf.python_io.TFRecordWriter(full_path)
+            writer = tf.io.TFRecordWriter(full_path)
 
             for fact in data:
                 encoded_fact = encode(fact)
@@ -86,7 +86,7 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
 
     write_tfrecords(facts[:-1000], "training")
     write_tfrecords(facts[-1000:], "testing")
-    write_tfrecords(facts[-100:], "predict")
+    write_tfrecords(facts[-1000:], "predict")
 
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):

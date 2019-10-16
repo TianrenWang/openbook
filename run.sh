@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#SBATCH --gres=gpu:1        # request GPU "generic resource"
+#SBATCH --gres=gpu:v100:1        # request GPU "generic resource"
 #SBATCH --cpus-per-task=6   # maximum CPU cores per GPU request: 6 on Cedar, 16$
 #SBATCH --mem=32000M        # memory per node
-#SBATCH --time=0-01:00      # time (DD-HH:MM)
+#SBATCH --time=0-04:00      # time (DD-HH:MM)
 #SBATCH --output=output.out  # %N for node name, %j for jobID
 
 #### local path
@@ -20,19 +20,20 @@ GS_MODEL_DIR=${GS_ROOT}/experiment/race
 TPU_NAME=
 
 python3 estimator.py \
-  --data_dir=data/p53-50000.txt \
+  --data_dir=data/openbook.txt \
   --model_dir=model/ \
-  --train_steps=100000 \
-  --vocab_level=13 \
-  --dropout=0.5 \
-  --heads=4 \
+  --train_steps=200000 \
+  --vocab_level=12 \
+  --dropout=0.1 \
+  --heads=8 \
   --seq_len=128 \
-  --batch_size=128 \
-  --layers=2 \
-  --depth=16 \
-  --feedforward=16 \
+  --batch_size=64 \
+  --layers=4 \
+  --depth=128 \
+  --feedforward=512 \
   --train=True \
   --evaluate=True \
   --predict=True \
+  --predict_samples=10 \
 
   $@

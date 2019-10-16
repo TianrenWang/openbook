@@ -21,7 +21,7 @@ import tensorflow as tf
 import transformer_model
 import text_processor
 
-flags = tf.app.flags
+flags = tf.compat.v1.flags
 
 # Configuration
 flags.DEFINE_string("data_dir", default="data/",
@@ -53,10 +53,10 @@ flags.DEFINE_bool("evaluate", default=True,
       help="whether to evaluate")
 flags.DEFINE_bool("predict", default=True,
       help="whether to predict")
+flags.DEFINE_integer("predict_samples", default=10,
+      help="the number of samples to predict")
 
 FLAGS = flags.FLAGS
-
-tf.logging.set_verbosity(tf.logging.INFO)
 
 INPUT_TENSOR_NAME = "inputs"
 SIGNATURE_NAME = "serving_default"
@@ -82,7 +82,6 @@ _MOMENTUM = 0.9
 _WEIGHT_DECAY = 2e-4
 
 _BATCHES_PER_EPOCH = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / BATCH_SIZE
-tf.enable_eager_execution()
 
 
 def model_fn(features, labels, mode, params):
@@ -122,12 +121,12 @@ def model_fn(features, labels, mode, params):
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions, export_outputs=export_outputs)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-        global_step = tf.train.get_or_create_global_step()
+        global_step = tf.compat.v1.train.get_or_create_global_step()
 
-        optimizer = tf.train.AdamOptimizer(learning_rate=1e-5, beta2=0.98, epsilon=1e-9)
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-5, beta2=0.98, epsilon=1e-9)
 
         # Batch norm requires update ops to be added as a dependency to the train_op
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step)
     else:
@@ -142,14 +141,12 @@ def model_fn(features, labels, mode, params):
 def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_training, drop_remainder):
 
     name_to_features = {
-      "input_ids": tf.FixedLenFeature([sequence_length], tf.int64),
+      "input_ids": tf.io.FixedLenFeature([sequence_length], tf.int64),
     }
-
-    tf.logging.info("Input tfrecord file {}".format(input_file))
 
     def _decode_record(record, name_to_features):
         """Decodes a record to a TensorFlow example."""
-        example = tf.parse_single_example(record, name_to_features)
+        example = tf.io.parse_single_example(record, name_to_features)
 
         # tf.Example only supports tf.int64, but the TPU only supports tf.int32.
         # So cast all int64 to int32.
@@ -237,16 +234,19 @@ def main(argv=None):
 
         print("Ended predicting")
 
-        for result in results:
+        for i, result in enumerate(results):
+            print("------------------------------------")
             output_sentence = result['prediction']
             input_sentence = result['original']
             print("result: " + str(output_sentence))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            break
+
+            if i + 1 == FLAGS.predict_samples:
+                break
 
         print("Ended showing result")
 
 
 if __name__ == '__main__':
-    tf.app.run()
+    tf.compat.v1.app.run()
