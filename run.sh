@@ -26,7 +26,8 @@ python3 estimator.py \
   --vocab_level=12 \
   --dropout=0.1 \
   --heads=8 \
-  --seq_len=128 \
+  --seq_len=36 \
+  --sparse_len=2 \
   --batch_size=64 \
   --layers=4 \
   --depth=128 \
