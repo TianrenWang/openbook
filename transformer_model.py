@@ -402,9 +402,9 @@ def TED_generator(vocab_size, FLAGS):
             x = self.dropout(x, training=training)
             compressor = self.dropout(compressor, training=training)
 
-            compressed = self.sparselayer(compressor, x, training, mask)
+            compressed, attention_weights = self.sparselayer(compressor, x, training, mask)
 
-            return compressed  # (batch_size, input_seq_len, d_model)
+            return compressed, attention_weights  # (batch_size, input_seq_len, d_model)
 
 
     # ### Decoder
@@ -500,14 +500,13 @@ def TED_generator(vocab_size, FLAGS):
         def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask):
             enc_output = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
-            sparse_out, _ = self.sparseEncoder(enc_output, training, enc_padding_mask)
+            sparse_out, attention_weights = self.sparseEncoder(enc_output, training, enc_padding_mask)
 
             batch = tf.shape(sparse_out)[0]
             sparse_mask = create_padding_mask(tf.ones([batch, self.sparse_len]))
 
             # dec_output.shape == (batch_size, tar_seq_len, d_model)
-            dec_output, attention_weights = self.decoder(
-                tar, sparse_out, training, look_ahead_mask, sparse_mask)
+            dec_output, _ = self.decoder(tar, sparse_out, training, look_ahead_mask, sparse_mask)
 
             final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
@@ -520,10 +519,6 @@ def TED_generator(vocab_size, FLAGS):
         enc_padding_mask, combined_mask, dec_padding_mask = create_masks(fact, predicted)
 
         transformer = Transformer(FLAGS.layers, FLAGS.depth, FLAGS.heads, FLAGS.feedforward, vocab_size, FLAGS.sparse_len, FLAGS.dropout)
-        predictions, _ = transformer(fact, predicted,
-                                     is_training,
-                                     enc_padding_mask,
-                                     combined_mask)
-        return predictions
+        return transformer(fact, predicted, is_training, enc_padding_mask, combined_mask)
 
     return model

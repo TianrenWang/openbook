@@ -17,6 +17,8 @@ from __future__ import print_function
 import argparse
 
 import tensorflow as tf
+import matplotlib.pyplot as plt
+import numpy as np
 
 import transformer_model
 import text_processor
@@ -92,7 +94,7 @@ def model_fn(features, labels, mode, params):
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
+    logits, attention_weights = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -113,7 +115,8 @@ def model_fn(features, labels, mode, params):
 
     predictions = {
         'original': features["input_ids"],
-        'prediction': tf.argmax(logits, 2)
+        'prediction': tf.argmax(logits, 2),
+        'sparse_attention': attention_weights
     }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
@@ -232,7 +235,7 @@ def main(argv=None):
 
         print("Started predicting")
 
-        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original'])
+        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention'])
 
         print("Ended predicting")
 
@@ -240,15 +243,50 @@ def main(argv=None):
             print("------------------------------------")
             output_sentence = result['prediction']
             input_sentence = result['original']
+            attention = result['sparse_attention']
             print("result: " + str(output_sentence))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
 
             if i + 1 == FLAGS.predict_samples:
+                plot_attention_weights(attention, input_sentence, tokenizer)
                 break
 
         print("Ended showing result")
 
+
+def plot_attention_weights(attention, encoded_sentence, tokenizer):
+    fig = plt.figure(figsize=(16, 8))
+    result = list(range(FLAGS.sparse_len))
+
+    sentence = encoded_sentence
+
+    attention = np.expand_dims(np.squeeze(attention, axis=0), 2)
+    print(attention.shape)
+
+    for head in range(attention.shape[0]):
+        ax = fig.add_subplot(2, 4, head + 1)
+
+        # plot the attention weights
+        ax.matshow(attention[head][:-1, :], cmap='viridis')
+
+        fontdict = {'fontsize': 10}
+
+        ax.set_xticks(range(len(sentence) + 2))
+        ax.set_yticks(range(len(result)))
+
+        ax.set_ylim(len(result) - 1.5, -0.5)
+
+        ax.set_xticklabels(
+            ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size] + ['<end>'],
+            fontdict=fontdict, rotation=90)
+
+        ax.set_yticklabels(result, fontdict=fontdict)
+
+        ax.set_xlabel('Head {}'.format(head + 1))
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == '__main__':
     tf.compat.v1.app.run()
