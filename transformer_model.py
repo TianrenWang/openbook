@@ -250,7 +250,7 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout2 = tf.keras.layers.Dropout(rate)
 
         def call(self, x, training, mask):
-            attn_output, _ = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
+            attn_output, attention_weights = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
             attn_output = self.dropout1(attn_output, training=training)
             out1 = self.layernorm1(x + attn_output)  # (batch_size, input_seq_len, d_model)
 
@@ -258,7 +258,7 @@ def TED_generator(vocab_size, FLAGS):
             ffn_output = self.dropout2(ffn_output, training=training)
             out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, input_seq_len, d_model)
 
-            return out2
+            return out2, attention_weights
 
 
     # ### Decoder layer
@@ -376,6 +376,7 @@ def TED_generator(vocab_size, FLAGS):
 
         def call(self, x, training, mask):
             seq_len = tf.shape(x)[1]
+            encoder_attention_weights = []
 
             # adding embedding and position encoding.
             x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
@@ -385,9 +386,10 @@ def TED_generator(vocab_size, FLAGS):
             x = self.dropout(x, training=training)
 
             for i in range(self.num_layers):
-                x = self.enc_layers[i](x, training, mask)
+                x, encoder_attention_weight = self.enc_layers[i](x, training, mask)
+                encoder_attention_weights.append(encoder_attention_weight)
 
-            return x  # (batch_size, input_seq_len, d_model)
+            return x, encoder_attention_weights  # (batch_size, input_seq_len, d_model)
 
 
     class SparseEncoder(tf.keras.layers.Layer):
@@ -503,9 +505,9 @@ def TED_generator(vocab_size, FLAGS):
             self.final_layer = tf.keras.layers.Dense(vocab_size)
 
         def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask):
-            enc_output = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
+            enc_output, encoder_attention_weights = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
-            sparse_out, attention_weights = self.sparseEncoder(enc_output, training, enc_padding_mask)
+            sparse_out, sparse_attention_weights = self.sparseEncoder(enc_output, training, enc_padding_mask)
 
             batch = tf.shape(sparse_out)[0]
             sparse_mask = create_padding_mask(tf.ones([batch, self.sparse_len]))
@@ -515,7 +517,7 @@ def TED_generator(vocab_size, FLAGS):
 
             final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
-            return final_output, attention_weights
+            return final_output, encoder_attention_weights, sparse_attention_weights
 
     def model(fact, is_training):
         predicted = tf.slice(fact, [0,0], [-1, fact.get_shape()[1]-1])

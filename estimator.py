@@ -14,11 +14,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
 
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import numpy as np
 
 import transformer_model
 import text_processor
@@ -62,30 +60,8 @@ flags.DEFINE_integer("predict_samples", default=10,
 
 FLAGS = flags.FLAGS
 
-INPUT_TENSOR_NAME = "inputs"
 SIGNATURE_NAME = "serving_default"
-training_file = "training.tfrecords"
-
-HEIGHT = 32
-WIDTH = 32
-DEPTH = 3
-NUM_CLASSES = 10
-NUM_DATA_BATCHES = 5
-NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 10000 * NUM_DATA_BATCHES
-NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 10000
-RESNET_SIZE = 32
-BATCH_SIZE = 1
-
-# Scale the learning rate linearly with the batch size. When the batch size is
-# 128, the learning rate should be 0.05.
-_INITIAL_LEARNING_RATE = 0.05 * BATCH_SIZE / 128
-_MOMENTUM = 0.9
-
-# We use a weight decay of 0.0002, which performs better than the 0.0001 that
-# was originally suggested.
-_WEIGHT_DECAY = 2e-4
-
-_BATCHES_PER_EPOCH = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / BATCH_SIZE
+encoderLayerNames = ['encoder_layer{}'.format(i + 1) for i in range(FLAGS.layers)]
 
 
 def model_fn(features, labels, mode, params):
@@ -94,7 +70,7 @@ def model_fn(features, labels, mode, params):
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, attention_weights = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
+    logits, encoder_attention_weights, sparse_attention_weights = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -116,8 +92,11 @@ def model_fn(features, labels, mode, params):
     predictions = {
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
-        'sparse_attention': attention_weights
+        'sparse_attention': sparse_attention_weights
     }
+
+    for i, weight in enumerate(encoder_attention_weights):
+        predictions["encoder_layer" + str(i + 1)] = weight
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         export_outputs = {
@@ -235,7 +214,7 @@ def main(argv=None):
 
         print("Started predicting")
 
-        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention'])
+        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention'] + encoderLayerNames)
 
         print("Ended predicting")
 
@@ -243,13 +222,15 @@ def main(argv=None):
             print("------------------------------------")
             output_sentence = result['prediction']
             input_sentence = result['original']
-            attention = result['sparse_attention']
+            sparse_attention = result['sparse_attention']
             print("result: " + str(output_sentence))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
 
             if i + 1 == FLAGS.predict_samples:
-                plot_attention_weights(attention, input_sentence, tokenizer)
+                plot_attention_weights(sparse_attention, input_sentence, tokenizer)
+                for layerName in encoderLayerNames:
+                    plot_attention_weights(result[layerName], input_sentence, tokenizer)
                 break
 
         print("Ended showing result")
@@ -257,7 +238,7 @@ def main(argv=None):
 
 def plot_attention_weights(attention, encoded_sentence, tokenizer):
     fig = plt.figure(figsize=(16, 8))
-    result = list(range(FLAGS.sparse_len))
+    result = list(range(attention.shape[1]))
 
     sentence = encoded_sentence
 
@@ -274,11 +255,14 @@ def plot_attention_weights(attention, encoded_sentence, tokenizer):
 
         #ax.set_ylim(len(result) - 1.5, -0.5)
 
-        ax.set_xticklabels(
-            ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size] + ['<end>'],
-            fontdict=fontdict, rotation=90)
+        decoded_sentence = ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size] + ['<end>']
 
-        ax.set_yticklabels(result, fontdict=fontdict)
+        ax.set_xticklabels(decoded_sentence, fontdict=fontdict, rotation=90)
+
+        if attention.shape[0] != 1:
+            ax.set_yticklabels(decoded_sentence, fontdict=fontdict)
+        else:
+            ax.set_yticklabels([0, 1], fontdict=fontdict)
 
         ax.set_xlabel('Head {}'.format(head + 1))
 
