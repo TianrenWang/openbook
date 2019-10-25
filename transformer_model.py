@@ -75,7 +75,7 @@ def TED_generator(vocab_size, FLAGS):
     # In[ ]:
 
 
-    def scaled_dot_product_attention(q, k, v, mask):
+    def scaled_dot_product_attention(q, k, v, mask, sparse):
         """Calculate the attention weights.
         q, k, v must have matching leading dimensions.
         k, v must have matching penultimate dimension, i.e.: seq_len_k = seq_len_v.
@@ -106,6 +106,11 @@ def TED_generator(vocab_size, FLAGS):
         # softmax is normalized on the last axis (seq_len_k) so that the scores
         # add up to 1.
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)  # (..., seq_len_q, seq_len_k)
+
+        if sparse:
+            max_weights = tf.math.reduce_max(attention_weights, axis=-1)
+            attention_weights /= tf.expand_dims(max_weights, -1)
+            attention_weights = tf.keras.layers.ReLU(1.0, 0, 0.899)(attention_weights)
 
         output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
@@ -161,7 +166,7 @@ def TED_generator(vocab_size, FLAGS):
             x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
             return tf.transpose(x, perm=[0, 2, 1, 3])
 
-        def call(self, v, k, q, mask):
+        def call(self, v, k, q, mask, sparse=False):
             batch_size = tf.shape(q)[0]
 
             q = self.wq(q)  # (batch_size, seq_len, d_model)
@@ -175,7 +180,7 @@ def TED_generator(vocab_size, FLAGS):
             # scaled_attention.shape == (batch_size, num_heads, seq_len_v, depth)
             # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
             scaled_attention, attention_weights = scaled_dot_product_attention(
-                q, k, v, mask)
+                q, k, v, mask, sparse)
 
             scaled_attention = tf.transpose(scaled_attention,
                                             perm=[0, 2, 1, 3])  # (batch_size, seq_len_v, num_heads, depth)
@@ -292,7 +297,7 @@ def TED_generator(vocab_size, FLAGS):
             # x = the randomly initialized sparse compressor
 
             attn, attn_weights_block = self.mha(
-                enc_output, enc_output, x, padding_mask)  # (batch_size, target_seq_len, d_model)
+                enc_output, enc_output, x, padding_mask, True)  # (batch_size, target_seq_len, d_model)
             attn = self.dropout1(attn, training=training)
             out = self.layernorm1(attn + x)  # (batch_size, target_seq_len, d_model)
 
