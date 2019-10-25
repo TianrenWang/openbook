@@ -17,21 +17,12 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
     data = open(filepath, "r")
     line = data.readline()
     facts = []
-    longest = len(line)
-    longest_index = 0
-    current_index = 0
 
     while line:
         first_period_index = line.find('.')
         line = line[:first_period_index]
         facts.append(str.encode(line))
         line = data.readline()
-        current_index += 1
-        if len(line) > longest:
-            longest = len(line)
-            longest_index = current_index
-
-    longest_text = facts[longest_index]
 
     data.close()
     shuffle(facts)
@@ -92,7 +83,7 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
     # for i, length in enumerate(lengths):
     #     print(str(i) + ": " + str(length))
 
-    return vocab_size, tokenizer, longest_text
+    return vocab_size, tokenizer
 
 
 def get_tokenizer(texts, vocab_level):

@@ -186,7 +186,7 @@ def main(argv=None):
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
 
-    vocab_size, tokenizer, sample_data = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
+    vocab_size, tokenizer = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
 
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params={'vocab_size': vocab_size},
                                        config=config)
@@ -261,21 +261,18 @@ def plot_attention_weights(attention, encoded_sentence, tokenizer):
 
     sentence = encoded_sentence
 
-    attention = np.expand_dims(np.squeeze(attention, axis=0), 2)
-    print(attention.shape)
-
     for head in range(attention.shape[0]):
         ax = fig.add_subplot(2, 4, head + 1)
 
         # plot the attention weights
-        ax.matshow(attention[head][:-1, :], cmap='viridis')
+        ax.matshow(attention[head][:, :], cmap='viridis')
 
         fontdict = {'fontsize': 10}
 
         ax.set_xticks(range(len(sentence) + 2))
         ax.set_yticks(range(len(result)))
 
-        ax.set_ylim(len(result) - 1.5, -0.5)
+        #ax.set_ylim(len(result) - 1.5, -0.5)
 
         ax.set_xticklabels(
             ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size] + ['<end>'],

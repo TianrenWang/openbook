@@ -107,7 +107,7 @@ def TED_generator(vocab_size, FLAGS):
         # add up to 1.
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)  # (..., seq_len_q, seq_len_k)
 
-        output = tf.matmul(attention_weights, v)  # (..., seq_len_v, depth_v)
+        output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
         return output, attention_weights
 
