@@ -110,7 +110,7 @@ def TED_generator(vocab_size, FLAGS):
         if sparse:
             max_weights = tf.math.reduce_max(attention_weights, axis=-1)
             attention_weights /= tf.expand_dims(max_weights, -1)
-            attention_weights = tf.keras.layers.ReLU(1.0, 0, 0.899)(attention_weights)
+            attention_weights = tf.keras.layers.ReLU(1.0, 0, FLAGS.sparse_thresh)(attention_weights)
 
         output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 

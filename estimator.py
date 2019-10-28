@@ -40,6 +40,8 @@ flags.DEFINE_integer("seq_len", default=48,
       help="length of the each fact")
 flags.DEFINE_integer("sparse_len", default=2,
       help="the length of the sparse representation")
+flags.DEFINE_float("sparse_thresh", default=0.0,
+      help="the threshold to keep the attention weight")
 flags.DEFINE_integer("batch_size", default=128,
       help="batch size")
 flags.DEFINE_integer("layers", default=2,
@@ -228,41 +230,42 @@ def main(argv=None):
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
 
             if i + 1 == FLAGS.predict_samples:
-                plot_attention_weights(sparse_attention, input_sentence, tokenizer)
+                plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
                 for layerName in encoderLayerNames:
-                    plot_attention_weights(result[layerName], input_sentence, tokenizer)
+                    plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
 
         print("Ended showing result")
 
 
-def plot_attention_weights(attention, encoded_sentence, tokenizer):
+def plot_attention_weights(attention, encoded_sentence, tokenizer, compressed):
     fig = plt.figure(figsize=(16, 8))
     result = list(range(attention.shape[1]))
 
     sentence = encoded_sentence
+    fontdict = {'fontsize': 10}
 
     for head in range(attention.shape[0]):
         ax = fig.add_subplot(2, 4, head + 1)
 
-        # plot the attention weights
-        ax.matshow(attention[head][:, :], cmap='viridis')
+        input_sentence = ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size and i != 0] + ['<end>']
+        output_sentence = input_sentence
 
-        fontdict = {'fontsize': 10}
+        ax.set_xticklabels(input_sentence, fontdict=fontdict, rotation=90)
+
+        if compressed: # check if this is the compressed layer
+            output_sentence = list(range(FLAGS.sparse_len))
+
+        ax.set_yticklabels(output_sentence, fontdict=fontdict)
+
+        # plot the attention weights
+        ax.matshow(attention[head][:len(output_sentence), :len(input_sentence)], cmap='viridis')
 
         ax.set_xticks(range(len(sentence) + 2))
         ax.set_yticks(range(len(result)))
 
-        #ax.set_ylim(len(result) - 1.5, -0.5)
-
-        decoded_sentence = ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size] + ['<end>']
-
-        ax.set_xticklabels(decoded_sentence, fontdict=fontdict, rotation=90)
-
-        if attention.shape[0] != 1:
-            ax.set_yticklabels(decoded_sentence, fontdict=fontdict)
-        else:
-            ax.set_yticklabels([0, 1], fontdict=fontdict)
+        ax.set_ylim(len(output_sentence) - 1, 0)
+        ax.set_xlim(0, len(input_sentence) - 1)
 
         ax.set_xlabel('Head {}'.format(head + 1))
 
