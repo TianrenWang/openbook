@@ -4,6 +4,7 @@ import tensorflow as tf
 from sklearn.utils import shuffle
 from random import shuffle
 import os
+import pandas as pd
 
 
 def create_int_feature(values):
@@ -12,27 +13,26 @@ def create_int_feature(values):
 
 
 def text_processor(data_path, seq_len, vocab_level, processed_path):
-    filepath = data_path
-
-    data = open(filepath, "r")
-    line = data.readline()
     facts = []
+    dir_path = data_path
 
-    while line:
-        first_period_index = line.find('.')
-        line = line[:first_period_index]
-        facts.append(str.encode(line))
-        line = data.readline()
+    def accumulate_facts(filename):
 
-    data.close()
+        data = open(dir_path + filename, "r")
+        line = data.readline().capitalize()
+
+        while line:
+            facts.append(str.encode(line[:-1]))
+            line = data.readline()
+
+        data.close()
+
+    accumulate_facts("openbook_facts.txt")
+    accumulate_facts("openbook_questions.txt")
+
     shuffle(facts)
 
     tokenizer = get_tokenizer(facts, vocab_level)
-
-    # example = tokenizer.encode("An example of camouflage is when something changes color in order to have the same color as its environment")
-
-    # for token in example:
-    #     print(tokenizer.decode([token]))
 
     vocab_size = tokenizer.vocab_size + 2
 
@@ -93,3 +93,21 @@ def get_tokenizer(texts, vocab_level):
 
     return tfds.features.text.SubwordTextEncoder.build_from_corpus(
         texts, target_vocab_size=input_vocab_size)
+
+
+def openbook_processor():
+    data = pd.read_json("data/train.jsonl", lines=True)
+    answers = data['answerKey']
+    questions = data['question']
+    f = open("data/openbook_train.txt", "a")
+
+    for question, answer in zip(questions, answers):
+        choices = question['choices']
+
+        for choice in choices:
+            if answer == choice['label']:
+                correctChoice = choice['text']
+
+        fact = question['stem'] + " " + correctChoice + "\n"
+        f.write(fact)
+    f.close()
