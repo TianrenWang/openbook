@@ -297,7 +297,7 @@ def TED_generator(vocab_size, FLAGS):
             # x = the randomly initialized sparse compressor
 
             attn, attn_weights_block = self.mha(
-                enc_output, enc_output, x, padding_mask, True)  # (batch_size, target_seq_len, d_model)
+                enc_output, enc_output, x, padding_mask)  # (batch_size, target_seq_len, d_model)
             attn = self.dropout1(attn, training=training)
             out = self.layernorm1(attn + x)  # (batch_size, target_seq_len, d_model)
 
