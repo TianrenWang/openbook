@@ -34,7 +34,6 @@ python3 estimator.py \
   --depth=128 \
   --feedforward=512 \
   --train=True \
-  --evaluate=True \
   --predict=True \
   --predict_samples=10 \
 

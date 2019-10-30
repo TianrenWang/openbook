@@ -53,8 +53,6 @@ flags.DEFINE_integer("feedforward", default=128,
 
 flags.DEFINE_bool("train", default=True,
       help="whether to train")
-flags.DEFINE_bool("evaluate", default=True,
-      help="whether to evaluate")
 flags.DEFINE_bool("predict", default=True,
       help="whether to predict")
 flags.DEFINE_integer("predict_samples", default=10,
@@ -184,14 +182,9 @@ def main(argv=None):
             is_training=True,
             drop_remainder=True)
 
-        estimator.train(
+        trainspec = tf.estimator.TrainSpec(
             input_fn=train_input_fn,
-            steps=FLAGS.train_steps)
-
-    if FLAGS.evaluate:
-        print("***************************************")
-        print("Evaluating")
-        print("***************************************")
+            max_steps=FLAGS.train_steps)
 
         eval_input_fn = file_based_input_fn_builder(
             input_file="testing",
@@ -200,7 +193,10 @@ def main(argv=None):
             is_training=False,
             drop_remainder=True)
 
-        print("Evaluation loss: " + str(estimator.evaluate(input_fn=eval_input_fn)))
+        evalspec = tf.estimator.EvalSpec(
+            input_fn=eval_input_fn)
+
+        tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
 
     if FLAGS.predict:
         print("***************************************")
