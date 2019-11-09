@@ -285,6 +285,7 @@ def TED_generator(vocab_size, FLAGS):
             self.mha = MultiHeadAttention(d_model, num_heads)
 
             self.ffn = point_wise_feed_forward_network(d_model, dff)
+            self.sparser = tf.keras.layers.Dense(1)
 
             self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
             self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -301,11 +302,13 @@ def TED_generator(vocab_size, FLAGS):
             attn = self.dropout1(attn, training=training)
             out = self.layernorm1(attn + x)  # (batch_size, target_seq_len, d_model)
 
+            sparse_attention = tf.keras.activations.relu(self.sparser(out), max_value=1)
+
             ffn_output = self.ffn(out)  # (batch_size, target_seq_len, d_model)
             ffn_output = self.dropout2(ffn_output, training=training)
             out = self.layernorm2(ffn_output + out)  # (batch_size, target_seq_len, d_model)
 
-            return out, attn_weights_block
+            return out * sparse_attention, attn_weights_block * sparse_attention
 
 
     class DecoderLayer(tf.keras.layers.Layer):
