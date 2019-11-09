@@ -28,6 +28,8 @@ python3 estimator.py \
   --heads=8 \
   --seq_len=40 \
   --sparse_len=2 \
+  --sparse_lim=6 \
+  --use_sparse=False \
   --sparse_thresh=0.0 \
   --batch_size=128 \
   --layers=4 \
