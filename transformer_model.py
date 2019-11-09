@@ -112,8 +112,8 @@ def TED_generator(vocab_size, FLAGS):
             # attention_weights /= tf.expand_dims(max_weights, -1)
             # attention_weights = tf.keras.layers.ReLU(1.0, 0, FLAGS.sparse_thresh)(attention_weights)
             print("************Using Sparse Attention**********************")
-            top, top_indices = tf.math.top_k(attention_weights, FLAGS.sparse_lim)
-            attention_weights = tf.scatter_nd(attention_weights, tf.expand_dims(top_indices, 1), [tf.shape(attention_weights)[-1]])
+            top_values, top_indices = tf.math.top_k(attention_weights, FLAGS.sparse_lim)
+            attention_weights = tf.scatter_nd(tf.expand_dims(top_indices, 1), top_values, [tf.shape(attention_weights)[-1]])
 
         output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
