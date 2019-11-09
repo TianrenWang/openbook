@@ -108,9 +108,11 @@ def TED_generator(vocab_size, FLAGS):
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)  # (..., seq_len_q, seq_len_k)
 
         if sparse:
-            max_weights = tf.math.reduce_max(attention_weights, axis=-1)
-            attention_weights /= tf.expand_dims(max_weights, -1)
-            attention_weights = tf.keras.layers.ReLU(1.0, 0, FLAGS.sparse_thresh)(attention_weights)
+            # max_weights = tf.math.reduce_max(attention_weights, axis=-1)
+            # attention_weights /= tf.expand_dims(max_weights, -1)
+            # attention_weights = tf.keras.layers.ReLU(1.0, 0, FLAGS.sparse_thresh)(attention_weights)
+            top_6, top_indices = tf.math.top_k(attention_weights, 6)
+            attention_weights = tf.scatter_nd(attention_weights, tf.expand_dims(top_indices, 1), [tf.shape(attention_weights)[-1]])
 
         output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
@@ -298,7 +300,7 @@ def TED_generator(vocab_size, FLAGS):
             # x = the randomly initialized sparse compressor
 
             attn, attn_weights_block = self.mha(
-                enc_output, enc_output, x, padding_mask)  # (batch_size, target_seq_len, d_model)
+                enc_output, enc_output, x, padding_mask, True)  # (batch_size, target_seq_len, d_model)
             attn = self.dropout1(attn, training=training)
             out = self.layernorm1(attn + x)  # (batch_size, target_seq_len, d_model)
 
