@@ -46,6 +46,8 @@ flags.DEFINE_bool("use_sparse", default=False,
       help="whether to use sparse attention")
 flags.DEFINE_float("sparse_thresh", default=0.0,
       help="the threshold to keep the attention weight")
+flags.DEFINE_float("conc", default=1.6,
+      help="concentration factor multiplier")
 flags.DEFINE_integer("batch_size", default=128,
       help="batch size")
 flags.DEFINE_integer("layers", default=2,
@@ -86,8 +88,14 @@ def model_fn(features, labels, mode, params):
 
         return tf.reduce_mean(loss_)
 
-    # Add weight decay to the loss.
-    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits)
+    # Calculate the loss
+    fact_lengths = tf.cast(features["input_len"], tf.float32)
+    concentration_factor = tf.math.log(fact_lengths - 1) * FLAGS.conc # tf.minimum(tf.math.log(fact_lengths - 1) * FLAGS.conc, tf.constant([[[[FLAGS.sparse_lim]]]], tf.float32))
+    concentration_factor = tf.reshape(fact_lengths, [tf.size(concentration_factor), 1, 1, 1])
+    sparse_loss = tf.math.square(sparse_attention_weights * concentration_factor)
+    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / concentration_factor
+    sparse_loss = tf.math.log(tf.math.sqrt(sparse_loss))
+    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + tf.reduce_mean(sparse_loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
@@ -129,7 +137,8 @@ def model_fn(features, labels, mode, params):
 def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_training, drop_remainder):
 
     name_to_features = {
-      "input_ids": tf.io.FixedLenFeature([sequence_length], tf.int64),
+        "input_ids": tf.io.FixedLenFeature([sequence_length], tf.int64),
+        "input_len": tf.io.FixedLenFeature([1], tf.int64)
     }
 
     def _decode_record(record, name_to_features):

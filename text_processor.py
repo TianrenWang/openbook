@@ -65,10 +65,11 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
                 fact_length = len(encoded_fact)
                 padding = seq_len - fact_length
 
-                if (padding >= 0):
+                if (padding >= 0 and fact_length >= 3):
                     feature = np.pad(encoded_fact, (0, padding), 'constant')
                     example = {}
                     example["input_ids"] = create_int_feature(feature)
+                    example["input_len"] = create_int_feature([fact_length])
 
                     tf_example = tf.train.Example(features=tf.train.Features(feature=example))
                     writer.write(tf_example.SerializeToString())

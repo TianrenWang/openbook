@@ -29,8 +29,9 @@ python3 estimator.py \
   --seq_len=40 \
   --sparse_len=2 \
   --sparse_lim=6 \
-  --use_sparse=False \
+  --use_sparse=True \
   --sparse_thresh=0.0 \
+  --conc=1.6 \
   --batch_size=128 \
   --layers=4 \
   --depth=128 \
