@@ -46,8 +46,10 @@ flags.DEFINE_bool("use_sparse", default=False,
       help="whether to use sparse attention")
 flags.DEFINE_float("sparse_thresh", default=0.0,
       help="the threshold to keep the attention weight")
-flags.DEFINE_float("conc", default=1.6,
+flags.DEFINE_float("conc", default=1.4,
       help="concentration factor multiplier")
+flags.DEFINE_float("sparse_loss", default=1,
+      help="sparse loss multiplier")
 flags.DEFINE_integer("batch_size", default=128,
       help="batch size")
 flags.DEFINE_integer("layers", default=2,
@@ -90,12 +92,12 @@ def model_fn(features, labels, mode, params):
 
     # Calculate the loss
     fact_lengths = tf.cast(features["input_len"], tf.float32)
-    concentration_factor = tf.math.log(fact_lengths - 1) * FLAGS.conc # tf.minimum(tf.math.log(fact_lengths - 1) * FLAGS.conc, tf.constant([[[[FLAGS.sparse_lim]]]], tf.float32))
+    concentration_factor = tf.math.log(fact_lengths - 2) * FLAGS.conc # tf.minimum(tf.math.log(fact_lengths - 1) * FLAGS.conc, tf.constant([[[[FLAGS.sparse_lim]]]], tf.float32))
     concentration_factor = tf.reshape(fact_lengths, [tf.size(concentration_factor), 1, 1, 1])
     sparse_loss = tf.math.square(sparse_attention_weights * concentration_factor)
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / concentration_factor
-    sparse_loss = tf.math.maximum(tf.math.sqrt(sparse_loss) - tf.ones([1,1,1,1]), tf.zeros([1,1,1,1]))
-    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + tf.reduce_mean(sparse_loss)
+    sparse_loss = tf.math.abs(tf.math.sqrt(sparse_loss) - tf.ones([1,1,1,1]))
+    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')

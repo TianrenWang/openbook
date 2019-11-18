@@ -31,7 +31,8 @@ python3 estimator.py \
   --sparse_lim=6 \
   --use_sparse=True \
   --sparse_thresh=0.0 \
-  --conc=1.6 \
+  --conc=1.4 \
+  --sparse_loss=1 \
   --batch_size=128 \
   --layers=4 \
   --depth=128 \
