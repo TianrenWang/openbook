@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --gres=gpu:v100:1        # request GPU "generic resource"
+#SBATCH --gres=gpu:p100:1        # request GPU "generic resource"
 #SBATCH --cpus-per-task=6   # maximum CPU cores per GPU request: 6 on Cedar, 16$
 #SBATCH --mem=32000M        # memory per node
 #SBATCH --time=0-04:00      # time (DD-HH:MM)
