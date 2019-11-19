@@ -96,7 +96,7 @@ def model_fn(features, labels, mode, params):
     concentration_factor = tf.reshape(fact_lengths, [tf.size(concentration_factor), 1, 1, 1])
     sparse_loss = tf.math.square(sparse_attention_weights * concentration_factor)
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / concentration_factor
-    sparse_loss = tf.math.abs(tf.math.sqrt(sparse_loss) - tf.ones([1,1,1,1]))
+    sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
     loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
 
     # Create a tensor named cross_entropy for logging purposes.
@@ -106,7 +106,8 @@ def model_fn(features, labels, mode, params):
     predictions = {
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
-        'sparse_attention': sparse_attention_weights
+        'sparse_attention': sparse_attention_weights,
+        'sparse_loss': sparse_loss
     }
 
     for i, weight in enumerate(encoder_attention_weights):
@@ -227,7 +228,7 @@ def main(argv=None):
 
         print("Started predicting")
 
-        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention'] + encoderLayerNames)
+        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention', 'sparse_loss'] + encoderLayerNames)
 
         print("Ended predicting")
 
@@ -236,7 +237,9 @@ def main(argv=None):
             output_sentence = result['prediction']
             input_sentence = result['original']
             sparse_attention = result['sparse_attention']
+            sparse_loss = result['sparse_loss']
             print("result: " + str(output_sentence))
+            print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
 
