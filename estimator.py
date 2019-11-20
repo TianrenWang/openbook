@@ -243,11 +243,11 @@ def main(argv=None):
             print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
+            plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
 
             if i + 1 == FLAGS.predict_samples:
-                plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
-                for layerName in encoderLayerNames:
-                    plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
+                # for layerName in encoderLayerNames:
+                #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
 
         print("Ended showing result")
