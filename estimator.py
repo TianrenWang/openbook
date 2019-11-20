@@ -92,11 +92,12 @@ def model_fn(features, labels, mode, params):
 
     # Calculate the loss
     fact_lengths = tf.cast(features["input_len"], tf.float32)
-    concentration_factor = tf.math.log(fact_lengths - 2) * FLAGS.conc # tf.minimum(tf.math.log(fact_lengths - 1) * FLAGS.conc, tf.constant([[[[FLAGS.sparse_lim]]]], tf.float32))
+    concentration_factor = tf.math.log(fact_lengths - 2) * FLAGS.conc
     concentration_factor = tf.reshape(fact_lengths, [tf.size(concentration_factor), 1, 1, 1])
     sparse_loss = tf.math.square(sparse_attention_weights * concentration_factor)
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / concentration_factor
+    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / tf.squeeze(concentration_factor, axis=-1)
     sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
+    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1)
     loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
 
     # Create a tensor named cross_entropy for logging purposes.
