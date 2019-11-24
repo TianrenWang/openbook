@@ -108,9 +108,19 @@ def TED_generator(vocab_size, FLAGS):
         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)  # (..., seq_len_q, seq_len_k)
 
         if sparse:
-            max_weights = tf.math.reduce_max(attention_weights, axis=-1)
-            attention_weights /= tf.expand_dims(max_weights, -1)
-            attention_weights = tf.keras.layers.ReLU(1.0, 0, FLAGS.sparse_thresh)(attention_weights)
+            # max_weights = tf.math.reduce_max(attention_weights, axis=-1)
+            # attention_weights /= tf.expand_dims(max_weights, -1)
+            # attention_weights = tf.keras.layers.ReLU(1.0, 0, FLAGS.sparse_thresh)(attention_weights)
+            print("************Using Sparse Attention**********************")
+            top_values, top_indices = tf.math.top_k(attention_weights, FLAGS.sparse_lim)
+            positions = tf.where(tf.not_equal(top_indices, 99999))
+            top_indices = tf.reshape(top_indices, [tf.size(top_indices), 1])
+            positions = tf.slice(positions, [0,0], [-1, 3]) # we only want the first 3 dimensions, since the last dimension is incorrect
+            positions = tf.cast(positions, tf.int32)
+            actual_indices = tf.concat([positions, top_indices], -1)
+            top_values = tf.reshape(top_values, [tf.size(top_values)])
+            attention_weights = tf.scatter_nd(actual_indices, top_values,
+                                              tf.constant(attention_weights.get_shape().as_list()))
 
         output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
@@ -285,6 +295,7 @@ def TED_generator(vocab_size, FLAGS):
             self.mha = MultiHeadAttention(d_model, num_heads)
 
             self.ffn = point_wise_feed_forward_network(d_model, dff)
+            # self.sparser = tf.keras.layers.Dense(1)
 
             self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
             self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -297,9 +308,11 @@ def TED_generator(vocab_size, FLAGS):
             # x = the randomly initialized sparse compressor
 
             attn, attn_weights_block = self.mha(
-                enc_output, enc_output, x, padding_mask)  # (batch_size, target_seq_len, d_model)
+                enc_output, enc_output, x, padding_mask, FLAGS.use_sparse)  # (batch_size, target_seq_len, d_model)
             attn = self.dropout1(attn, training=training)
             out = self.layernorm1(attn + x)  # (batch_size, target_seq_len, d_model)
+
+            # sparse_attention = tf.keras.activations.relu(self.sparser(out), max_value=1)
 
             ffn_output = self.ffn(out)  # (batch_size, target_seq_len, d_model)
             ffn_output = self.dropout2(ffn_output, training=training)
