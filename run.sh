@@ -37,6 +37,7 @@ python3 estimator.py \
   --layers=4 \
   --depth=128 \
   --feedforward=512 \
+  --position_encode=1 \
   --train=True \
   --predict=True \
   --predict_samples=10 \

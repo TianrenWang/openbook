@@ -26,7 +26,7 @@ def TED_generator(vocab_size, FLAGS):
 
         pos_encoding = pos_encoding[np.newaxis, ...]
 
-        return tf.cast(pos_encoding, dtype=tf.float32)
+        return tf.cast(pos_encoding, dtype=tf.float32) * FLAGS.position_encode
 
 
     # ## Masking

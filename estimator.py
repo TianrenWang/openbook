@@ -58,6 +58,8 @@ flags.DEFINE_integer("depth", default=128,
       help="the size of the attention layer")
 flags.DEFINE_integer("feedforward", default=128,
       help="the size of feedforward layer")
+flags.DEFINE_float("position_encode", default=1,
+      help="the strength of positional encoding")
 
 flags.DEFINE_bool("train", default=True,
       help="whether to train")
