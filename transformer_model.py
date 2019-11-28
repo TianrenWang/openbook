@@ -405,14 +405,61 @@ def TED_generator(vocab_size, FLAGS):
             return x, encoder_attention_weights  # (batch_size, input_seq_len, d_model)
 
 
-    class SparseEncoder(tf.keras.layers.Layer):
+    class GraphEncoder(tf.keras.layers.Layer):
         def __init__(self, d_model, num_heads, dff, seq_len, rate=0.1):
-            super(SparseEncoder, self).__init__()
+            super(GraphEncoder, self).__init__()
 
             self.d_model = d_model
             self.dropout = tf.keras.layers.Dropout(rate)
-            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
+            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model], trainable=False)
             self.sparselayer = SparseEncoderLayer(d_model, num_heads, dff, rate)
+            self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model])
+            self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size])
+
+        def call(self, x, training, mask):
+
+            # Compresses the sequence lengths of encoded sentences
+            compressor = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor, 0)
+            compressor = tf.tile(compressor, [tf.shape(x)[0], 1, 1])
+
+            x = self.dropout(x, training=training)
+            compressor = self.dropout(compressor, training=training)
+
+            compressed, attention_weights = self.sparselayer(compressor, x, training, mask)
+
+            # Identify the nodes in the graph that are the most similar to the encoded tokens and update the graph
+            normed_graph = tf.math.l2_normalize(self.graphNodes, -1)
+            normed_compressed = tf.math.l2_normalize(compressed, -1)
+
+            cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
+                                          tf.transpose(normed_graph, [1, 0]))
+
+            closest_words_ind = tf.argmax(cosine_similarity, -1)  # shape [batch_size], type int64
+            ___, idx, count = tf.unique_with_counts(closest_words_ind)
+            counts = tf.gather(count, idx)
+            counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
+
+            closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
+            compressed = tf.reshape(compressed, [-1, self.d_model])
+            compressed = compressed * (1 - FLAGS.alpha)
+
+            update = (closest_words + compressed) / counts
+
+            self.graphNodes.scatter_nd_update(tf.reshape(closest_words_ind, [-1, 1]), update)
+
+            return compressed, attention_weights  # (batch_size, input_seq_len, d_model)
+
+
+    class GraphEmbedder(tf.keras.layers.Layer):
+        def __init__(self, d_model, num_heads, dff, seq_len, rate=0.1):
+            super(GraphEmbedder, self).__init__()
+
+            self.d_model = d_model
+            self.dropout = tf.keras.layers.Dropout(rate)
+            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model], trainable=False)
+            self.sparselayer = SparseEncoderLayer(d_model, num_heads, dff, rate)
+            self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model])
+            self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size])
 
         def call(self, x, training, mask):
 
@@ -424,19 +471,26 @@ def TED_generator(vocab_size, FLAGS):
 
             compressed, attention_weights = self.sparselayer(compressor, x, training, mask)
 
+            normed_graph = tf.math.l2_normalize(self.graphNodes, -1)
+            normed_compressed = tf.math.l2_normalize(compressed, -1)
+
+            cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
+                                          tf.transpose(normed_graph, [1, 0]))
+
+            closest_words_ind = tf.argmax(cosine_similarity, -1)  # shape [batch_size], type int64
+            ___, idx, count = tf.unique_with_counts(closest_words_ind)
+            counts = tf.gather(count, idx)
+            counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
+
+            closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
+            compressed = tf.reshape(compressed, [-1, self.d_model])
+            compressed = compressed * (1 - FLAGS.alpha)
+
+            update = (closest_words + compressed) / counts
+
+            self.graphNodes.scatter_nd_update(tf.reshape(closest_words_ind, [-1, 1]), update)
+
             return compressed, attention_weights  # (batch_size, input_seq_len, d_model)
-
-
-    # ### Decoder
-
-    #  The `Decoder` consists of:
-    # 1.   Output Embedding
-    # 2.   Positional Encoding
-    # 3.   N decoder layers
-    #
-    # The target is put through an embedding which is summed with the positional encoding. The output of this summation is the input to the decoder layers. The output of the decoder is the input to the final linear layer.
-
-    # In[ ]:
 
 
     class Decoder(tf.keras.layers.Layer):

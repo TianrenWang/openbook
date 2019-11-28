@@ -33,6 +33,8 @@ python3 estimator.py \
   --sparse_thresh=0.0 \
   --conc=1.4 \
   --sparse_loss=1 \
+  --alpha=0.98 \
+  --graph_size=512 \
   --batch_size=128 \
   --layers=4 \
   --depth=128 \
