@@ -32,7 +32,7 @@ python3 estimator.py \
   --use_sparse=False \
   --sparse_thresh=0.0 \
   --conc=1.4 \
-  --sparse_loss=1 \
+  --sparse_loss=0 \
   --batch_size=128 \
   --layers=4 \
   --depth=128 \
