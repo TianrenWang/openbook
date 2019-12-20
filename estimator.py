@@ -82,7 +82,7 @@ def model_fn(features, labels, mode, params):
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, sparse_attention_weights = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
+    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -98,7 +98,7 @@ def model_fn(features, labels, mode, params):
     fact_lengths = tf.cast(features["input_len"], tf.float32)
     concentration_factor = tf.math.log(fact_lengths - 2) * FLAGS.conc
     concentration_factor = tf.reshape(concentration_factor, [tf.size(concentration_factor), 1, 1, 1])
-    sparse_loss = tf.math.square(sparse_attention_weights * concentration_factor)
+    sparse_loss = tf.math.square(compress_attention * concentration_factor)
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / tf.squeeze(concentration_factor, axis=-1)
     sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1)
@@ -111,7 +111,9 @@ def model_fn(features, labels, mode, params):
     predictions = {
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
-        'sparse_attention': sparse_attention_weights,
+        'sparse_attention': compress_attention,
+        'pickout_attention': pickOut_attention,
+        'projection_attention': projection_attention,
         'sparse_loss': sparse_loss
     }
 
@@ -233,7 +235,9 @@ def main(argv=None):
 
         print("Started predicting")
 
-        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention', 'sparse_loss'] + encoderLayerNames)
+        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+                                                                          'pickout_attention', 'projection_attention',
+                                                                          'sparse_loss'] + encoderLayerNames)
 
         print("Ended predicting")
 
