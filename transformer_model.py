@@ -434,11 +434,11 @@ def TED_generator(vocab_size, FLAGS):
 
             self.d_model = d_model
             self.dropout = tf.keras.layers.Dropout(rate)
-            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model], trainable=False)
+            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
             self.embedderLayer1 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
             self.embedderLayer2 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
-            self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model])
-            self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size])
+            self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model], trainable=False)
+            self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
             self.pickOut = tf.keras.layers.Dense(1)
 
         @tf.function
