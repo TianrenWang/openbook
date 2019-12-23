@@ -485,7 +485,7 @@ def TED_generator(vocab_size, FLAGS):
             closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
             norm_duplicate = tf.expand_dims(tf.map_fn(normalize_unique, closest_words_ind_batched, dtype=tf.float32), -1)
             print("norm_duplicate: "  + str(norm_duplicate))
-            batched_nodes = tf.reshape(tf.tile(self.graphNodes.value(), [tf.shape(x)[0], 1]), [-1] + self.graphNodes.get_shape().as_list())
+            batched_nodes = tf.reshape(tf.tile(self.graphNodes.value(), [tf.shape(x)[0], 1]), [-1] + self.graphNodes.value().get_shape().as_list())
             print("batched_nodes: " + str(batched_nodes))
             positions = tf.where(tf.not_equal(closest_words_ind_batched, 99999))
             positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
