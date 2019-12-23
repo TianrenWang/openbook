@@ -465,7 +465,7 @@ def TED_generator(vocab_size, FLAGS):
             closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size], type int64
 
             # This part is for training, update the graph node embedding
-            if tf.constant([training]):
+            if training:
                 print("**************Updating Graph Nodes*********************")
                 with tf.device('/cpu:0'):
                     ___, idx, count = tf.unique_with_counts(closest_words_ind)
