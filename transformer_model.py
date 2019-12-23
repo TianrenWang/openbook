@@ -61,7 +61,8 @@ def TED_generator(vocab_size, FLAGS):
     # then return a y whose values in those positions are 1/3 = 0.33.
 
     def normalize_unique(x):
-        ___, idx, count = tf.unique_with_counts(x)
+        with tf.device('/cpu:0'):
+            ___, idx, count = tf.unique_with_counts(x)
         counts = tf.gather(count, idx)
         return tf.cast(1/counts, tf.float32)
 
@@ -466,7 +467,8 @@ def TED_generator(vocab_size, FLAGS):
             # This part is for training, update the graph node embedding
             if tf.constant([training]):
                 print("**************Updating Graph Nodes*********************")
-                ___, idx, count = tf.unique_with_counts(closest_words_ind)
+                with tf.device('/cpu:0'):
+                    ___, idx, count = tf.unique_with_counts(closest_words_ind)
                 counts = tf.gather(count, idx)
                 counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
                 closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
