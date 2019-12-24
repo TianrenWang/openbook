@@ -61,9 +61,11 @@ def TED_generator(vocab_size, FLAGS):
     # then return a y whose values in those positions are 1/3 = 0.33.
 
     def normalize_unique(x):
+        print("normalize_unique: " + str(x))
         with tf.device('/cpu:0'):
             ___, idx, count = tf.unique_with_counts(x)
         counts = tf.gather(count, idx)
+        print("counts: " + str(tf.cast(1/counts, tf.float32)))
         return tf.cast(1/counts, tf.float32)
 
 
@@ -462,7 +464,7 @@ def TED_generator(vocab_size, FLAGS):
             cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
                                           tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
 
-            closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size], type int64
+            closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
 
             # This part is for training, update the graph node embedding
             if training:
@@ -473,9 +475,11 @@ def TED_generator(vocab_size, FLAGS):
                 counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
                 closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
                 compressed = tf.reshape(compressed, [-1, self.d_model])
-                compressed = compressed * (1 - FLAGS.alpha)
-                update = (closest_words + compressed) / counts
-                tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), update)
+                compressed = compressed * (1 - FLAGS.alpha) / counts
+                tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
+
+                # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
+                tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
 
             # This tensor will later be used to visualize which nodes were chosen
             projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),
