@@ -444,6 +444,7 @@ def TED_generator(vocab_size, FLAGS):
                                           trainable=False)
             self.graphEdges = tf.Variable(tf.constant(np.random.randn(FLAGS.graph_size, FLAGS.graph_size), tf.float32),
                                           trainable=False)
+            self.projection = tf.keras.layers.Dense(d_model)
             self.pickOut = tf.keras.layers.Dense(1)
 
         @tf.function
@@ -499,7 +500,7 @@ def TED_generator(vocab_size, FLAGS):
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
             print("compressed: " + str(compressed))
             print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-            projection_signal = tf.reshape(compressed, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
+            projection_signal = tf.reshape(self.projection(compressed), [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
             print("projection_signal: " + str(projection_signal))
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
