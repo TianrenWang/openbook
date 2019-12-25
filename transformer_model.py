@@ -514,33 +514,33 @@ def TED_generator(vocab_size, FLAGS):
             # # Cull the weak attentions from self-attention weights and use those for graph edges
             # # Use selection to identify the top X nodes for each sample
             #
-            # # Self attention on the encoded graphs
-            # transformed_graph, graph_attention = self.embedderLayer2(encodedGraph, encodedGraph, training,
-            #                                                          padding_mask=None)
-            # print("transformed_graph: " + str(transformed_graph))
-            #
-            # # Find the top X nodes of the encodedGraph to use for the next step
-            # pickoutWeight = self.pickOut(transformed_graph)
-            # print("pickoutWeight: " + str(pickoutWeight))
-            # pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
-            # print("pickOut_attention: " + str(pickOut_attention))
-            #
-            # __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
-            #
-            # pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
-            #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
-            # print("pickedOutNodes: " + str(pickedOutNodes))
-            #
-            # # Embed the edge information based off the graph attention
-            # # Yet to be implemented, but not necessary for this model
-            #
-            # # Pickout attentions: the graph nodes that were picked for decoding
-            # # Projection attention: the graph nodes that were projected onto after the compression
-            # # Compressed attention: how the original input was compressed
+            # Self attention on the encoded graphs
+            transformed_graph, graph_attention = self.embedderLayer2(compressed, compressed, training,
+                                                                     padding_mask=None)
+            print("transformed_graph: " + str(transformed_graph))
+
+            # Find the top X nodes of the encodedGraph to use for the next step
+            pickoutWeight = self.pickOut(transformed_graph)
+            print("pickoutWeight: " + str(pickoutWeight))
+            pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
+            print("pickOut_attention: " + str(pickOut_attention))
+
+            __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
+
+            pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
+                                        [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
+            print("pickedOutNodes: " + str(pickedOutNodes))
+
+            # Embed the edge information based off the graph attention
+            # Yet to be implemented, but not necessary for this model
+
+            # Pickout attentions: the graph nodes that were picked for decoding
+            # Projection attention: the graph nodes that were projected onto after the compression
+            # Compressed attention: how the original input was compressed
             # return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
             #                                                                          [-1, FLAGS.graph_size])
 
-            return compressed, compress_attention, compress_attention, compress_attention
+            return pickedOutNodes, compress_attention, compress_attention, compress_attention
 
 
     class Decoder(tf.keras.layers.Layer):
