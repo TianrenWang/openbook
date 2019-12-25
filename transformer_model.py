@@ -459,86 +459,88 @@ def TED_generator(vocab_size, FLAGS):
             compressed, compress_attention = self.embedderLayer1(compressor, x, training, mask)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
-            normed_graph = tf.keras.backend.l2_normalize(self.graphNodes, -1)
-            normed_compressed = tf.math.l2_normalize(compressed, -1)
+            # normed_graph = tf.keras.backend.l2_normalize(self.graphNodes, -1)
+            # normed_compressed = tf.math.l2_normalize(compressed, -1)
+            #
+            # cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
+            #                               tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
+            #
+            # closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
+            #
+            # # This part is for training, update the graph node embedding
+            # if training:
+            #     print("**************Updating Graph Nodes*********************")
+            #     with tf.device('/cpu:0'):
+            #         ___, idx, count = tf.unique_with_counts(closest_words_ind)
+            #     counts = tf.gather(count, idx)
+            #     counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
+            #     closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
+            #     compressed = tf.reshape(compressed, [-1, self.d_model])
+            #     compressed = compressed * (1 - FLAGS.alpha) / counts
+            #     tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
+            #
+            #     # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
+            #     tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
+            #
+            # # This tensor will later be used to visualize which nodes were chosen
+            # projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),
+            #                                      tf.ones([tf.size(closest_words_ind), 1]),
+            #                                      [FLAGS.graph_size, 1])
+            # print("projection_attention: " + str(projection_attention))
+            #
+            # # Project signal to the same nodes for added expressiveness
+            # closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
+            # norm_duplicate = tf.expand_dims(tf.map_fn(normalize_unique, closest_words_ind_batched, dtype=tf.float32), -1)
+            # print("norm_duplicate: "  + str(norm_duplicate))
+            # batched_nodes = tf.reshape(tf.tile(self.graphNodes, [tf.shape(x)[0], 1]), [-1] + self.graphNodes.get_shape().as_list())
+            # print("batched_nodes: " + str(batched_nodes))
+            # positions = tf.where(tf.not_equal(closest_words_ind_batched, 99999))
+            # positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
+            # positions = tf.cast(positions, tf.int32)
+            # positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
+            # print("compressed: " + str(compressed))
+            # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
+            # projection_signal = tf.reshape(self.projection(compressed), [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
+            # print("projection_signal: " + str(projection_signal))
+            #
+            # encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
+            # print("encodedGraph: " + str(encodedGraph))
+            #
+            # # I should let each node of the graph reconciliate with every other node, thus I need a self-attention
+            # # transformer. I can use the attention weights as the edges, but they will be culled by ReLU.
+            #
+            # # Current workflow
+            # # Self-attention transformer on all nodes
+            # # Cull the weak attentions from self-attention weights and use those for graph edges
+            # # Use selection to identify the top X nodes for each sample
+            #
+            # # Self attention on the encoded graphs
+            # transformed_graph, graph_attention = self.embedderLayer2(encodedGraph, encodedGraph, training,
+            #                                                          padding_mask=None)
+            # print("transformed_graph: " + str(transformed_graph))
+            #
+            # # Find the top X nodes of the encodedGraph to use for the next step
+            # pickoutWeight = self.pickOut(transformed_graph)
+            # print("pickoutWeight: " + str(pickoutWeight))
+            # pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
+            # print("pickOut_attention: " + str(pickOut_attention))
+            #
+            # __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
+            #
+            # pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
+            #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
+            # print("pickedOutNodes: " + str(pickedOutNodes))
+            #
+            # # Embed the edge information based off the graph attention
+            # # Yet to be implemented, but not necessary for this model
+            #
+            # # Pickout attentions: the graph nodes that were picked for decoding
+            # # Projection attention: the graph nodes that were projected onto after the compression
+            # # Compressed attention: how the original input was compressed
+            # return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
+            #                                                                          [-1, FLAGS.graph_size])
 
-            cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
-                                          tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
-
-            closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
-
-            # This part is for training, update the graph node embedding
-            if training:
-                print("**************Updating Graph Nodes*********************")
-                with tf.device('/cpu:0'):
-                    ___, idx, count = tf.unique_with_counts(closest_words_ind)
-                counts = tf.gather(count, idx)
-                counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
-                closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
-                compressed = tf.reshape(compressed, [-1, self.d_model])
-                compressed = compressed * (1 - FLAGS.alpha) / counts
-                tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
-
-                # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
-                tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
-
-            # This tensor will later be used to visualize which nodes were chosen
-            projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),
-                                                 tf.ones([tf.size(closest_words_ind), 1]),
-                                                 [FLAGS.graph_size, 1])
-            print("projection_attention: " + str(projection_attention))
-
-            # Project signal to the same nodes for added expressiveness
-            closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
-            norm_duplicate = tf.expand_dims(tf.map_fn(normalize_unique, closest_words_ind_batched, dtype=tf.float32), -1)
-            print("norm_duplicate: "  + str(norm_duplicate))
-            batched_nodes = tf.reshape(tf.tile(self.graphNodes, [tf.shape(x)[0], 1]), [-1] + self.graphNodes.get_shape().as_list())
-            print("batched_nodes: " + str(batched_nodes))
-            positions = tf.where(tf.not_equal(closest_words_ind_batched, 99999))
-            positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
-            positions = tf.cast(positions, tf.int32)
-            positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
-            print("compressed: " + str(compressed))
-            print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-            projection_signal = tf.reshape(self.projection(compressed), [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
-            print("projection_signal: " + str(projection_signal))
-
-            encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
-            print("encodedGraph: " + str(encodedGraph))
-
-            # I should let each node of the graph reconciliate with every other node, thus I need a self-attention
-            # transformer. I can use the attention weights as the edges, but they will be culled by ReLU.
-
-            # Current workflow
-            # Self-attention transformer on all nodes
-            # Cull the weak attentions from self-attention weights and use those for graph edges
-            # Use selection to identify the top X nodes for each sample
-
-            # Self attention on the encoded graphs
-            transformed_graph, graph_attention = self.embedderLayer2(encodedGraph, encodedGraph, training,
-                                                                     padding_mask=None)
-            print("transformed_graph: " + str(transformed_graph))
-
-            # Find the top X nodes of the encodedGraph to use for the next step
-            pickoutWeight = self.pickOut(transformed_graph)
-            print("pickoutWeight: " + str(pickoutWeight))
-            pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
-            print("pickOut_attention: " + str(pickOut_attention))
-
-            __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
-
-            pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
-                                        [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
-            print("pickedOutNodes: " + str(pickedOutNodes))
-
-            # Embed the edge information based off the graph attention
-            # Yet to be implemented, but not necessary for this model
-
-            # Pickout attentions: the graph nodes that were picked for decoding
-            # Projection attention: the graph nodes that were projected onto after the compression
-            # Compressed attention: how the original input was compressed
-            return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
-                                                                                     [-1, FLAGS.graph_size])
+            return compressed, compress_attention, compress_attention, compress_attention
 
 
     class Decoder(tf.keras.layers.Layer):
