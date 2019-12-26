@@ -459,13 +459,22 @@ def TED_generator(vocab_size, FLAGS):
             compressed, compress_attention = self.embedderLayer1(compressor, x, training, mask)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
-            normed_graph = tf.keras.backend.l2_normalize(self.graphNodes, -1)
-            normed_compressed = tf.math.l2_normalize(compressed, -1)
+            compressed = tf.reshape(compressed, [-1, self.d_model])
 
-            cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
-                                          tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
+            p1 = tf.matmul(
+                tf.expand_dims(tf.reduce_sum(tf.square(compressed), 1), 1),
+                tf.ones(shape=(1, FLAGS.graph_size))
+            )
+            p2 = tf.transpose(tf.matmul(
+                tf.reshape(tf.reduce_sum(tf.square(self.graphNodes), 1), shape=[-1, 1]),
+                tf.ones(shape=(FLAGS.sparse_len * x.get_shape().as_list()[0], 1)),
+                transpose_b=True
+            ))
 
-            closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
+            eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(compressed, self.graphNodes, transpose_b=True))
+
+            closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1),
+                                        tf.int32)  # shape [batch_size * sparse_len], type int64
 
             # This part is for training, update the graph node embedding
             if training:
@@ -500,7 +509,8 @@ def TED_generator(vocab_size, FLAGS):
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
             print("compressed: " + str(compressed))
             print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-            projection_signal = tf.reshape(self.projection(compressed), [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
+            projection = self.dropout(self.projection(compressed))
+            projection_signal = tf.reshape(projection, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
             print("projection_signal: " + str(projection_signal))
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
