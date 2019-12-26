@@ -40,21 +40,26 @@ if __name__ == '__main__':
     compressed = tf.constant(np.random.randn(batch, seq, d_model), tf.float32)
     projection = tf.keras.layers.Dense(d_model)
 
-    # Find the nodes in the graph that are the closest to the encoded signal and update them
-    normed_graph = tf.keras.backend.l2_normalize(graphNodes, -1)
-    normed_compressed = tf.math.l2_normalize(compressed, -1)
-    print("normed_graph: " + str(normed_graph.shape))
-    print("normed_compressed: " + str(normed_compressed.shape))
-
-    cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, d_model]),
-                                  tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
-    print("cosine_similarity: " + str(cosine_similarity.shape))
-
-    closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
-    print("closest_words_ind: " + str(closest_words_ind.shape))
+    compressed = tf.reshape(compressed, [-1, d_model])
 
     print("compressed: " + str(compressed))
     print("graphNodes: " + str(graphNodes))
+
+    # Find the nodes in the graph that are the closest to the encoded signal and update them
+    p1 = tf.matmul(
+        tf.expand_dims(tf.reduce_sum(tf.square(compressed), 1), 1),
+        tf.ones(shape=(1, graph_size))
+    )
+    p2 = tf.transpose(tf.matmul(
+        tf.reshape(tf.reduce_sum(tf.square(graphNodes), 1), shape=[-1, 1]),
+        tf.ones(shape=(seq * batch, 1)),
+        transpose_b=True
+    ))
+
+    eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(compressed, graphNodes, transpose_b=True))
+
+    closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
+    print("closest_words_ind: " + str(closest_words_ind))
     oldGraph = graphNodes.value()
 
     # This part is for training, update the graph node embedding
