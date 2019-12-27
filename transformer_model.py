@@ -444,6 +444,7 @@ def TED_generator(vocab_size, FLAGS):
                                           trainable=False)
             self.graphEdges = tf.Variable(tf.constant(np.random.randn(FLAGS.graph_size, FLAGS.graph_size), tf.float32),
                                           trainable=False)
+            self.graphNorm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
             self.projection = tf.keras.layers.Dense(d_model)
             self.pickOut = tf.keras.layers.Dense(1)
 
@@ -491,6 +492,8 @@ def TED_generator(vocab_size, FLAGS):
                 # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
                 tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
 
+            graphNodes = self.graphNorm(self.graphNodes)
+
             # This tensor will later be used to visualize which nodes were chosen
             projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),
                                                  tf.ones([tf.size(closest_words_ind), 1]),
@@ -501,7 +504,7 @@ def TED_generator(vocab_size, FLAGS):
             closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
             norm_duplicate = tf.expand_dims(tf.map_fn(normalize_unique, closest_words_ind_batched, dtype=tf.float32), -1)
             print("norm_duplicate: "  + str(norm_duplicate))
-            batched_nodes = tf.reshape(tf.tile(self.graphNodes, [tf.shape(x)[0], 1]), [-1] + self.graphNodes.get_shape().as_list())
+            batched_nodes = tf.reshape(tf.tile(graphNodes, [tf.shape(x)[0], 1]), [-1] + graphNodes.get_shape().as_list())
             print("batched_nodes: " + str(batched_nodes))
             positions = tf.where(tf.not_equal(closest_words_ind_batched, 99999))
             positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
@@ -515,6 +518,8 @@ def TED_generator(vocab_size, FLAGS):
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
             print("encodedGraph: " + str(encodedGraph))
+
+            encodedGraph = tf.keras.activations.relu(encodedGraph)
 
             # I should let each node of the graph reconciliate with every other node, thus I need a self-attention
             # transformer. I can use the attention weights as the edges, but they will be culled by ReLU.
