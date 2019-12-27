@@ -436,7 +436,9 @@ def TED_generator(vocab_size, FLAGS):
             super(GraphEmbedder, self).__init__()
 
             self.d_model = d_model
-            self.dropout = tf.keras.layers.Dropout(rate)
+            self.dropout1 = tf.keras.layers.Dropout(rate)
+            self.dropout2 = tf.keras.layers.Dropout(rate)
+            self.dropout3 = tf.keras.layers.Dropout(rate)
             self.compressor = tf.Variable(tf.constant(np.random.randn(seq_len, d_model), tf.float32))
             self.embedderLayer1 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
             self.embedderLayer2 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
@@ -444,19 +446,26 @@ def TED_generator(vocab_size, FLAGS):
                                           trainable=False)
             self.graphEdges = tf.Variable(tf.constant(np.random.randn(FLAGS.graph_size, FLAGS.graph_size), tf.float32),
                                           trainable=False)
-            self.projection = tf.keras.layers.Dense(d_model)
+            self.projection = tf.keras.layers.Dense(d_model, activation='relu')
             self.pickOut = tf.keras.layers.Dense(1)
+            self.layerNorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         @tf.function
         def call(self, x, training, mask):
+
+            x = self.dropout1(x, training=training)
+
             # Compress the encoded signal into a smaller space
             compressor = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor, 0)
             compressor = tf.tile(compressor, [tf.shape(x)[0], 1, 1])
 
-            x = self.dropout(x, training=training)
-            compressor = self.dropout(compressor, training=training)
+            compressor = self.dropout2(compressor, training=training)
 
             compressed, compress_attention = self.embedderLayer1(compressor, x, training, mask)
+
+            compressed = self.dropout3(compressed)
+            projection_signal = self.projection(compressed)
+            projection_signal = self.layerNorm1(projection_signal)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             compressed = tf.reshape(compressed, [-1, self.d_model])
@@ -510,7 +519,7 @@ def TED_generator(vocab_size, FLAGS):
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
             print("compressed: " + str(compressed))
             print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-            projection_signal = tf.reshape(self.projection(compressed), [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
+            projection_signal = tf.reshape(projection_signal, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
             print("projection_signal: " + str(projection_signal))
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
