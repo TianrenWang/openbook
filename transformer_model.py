@@ -439,13 +439,13 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout1 = tf.keras.layers.Dropout(rate)
             self.dropout2 = tf.keras.layers.Dropout(rate)
             self.dropout3 = tf.keras.layers.Dropout(rate)
-            self.compressor = tf.Variable(tf.constant(np.random.randn(seq_len, d_model), tf.float32))
+            self.dropout4 = tf.keras.layers.Dropout(rate)
+            self.dropout5 = tf.keras.layers.Dropout(rate)
+            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
             self.embedderLayer1 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
             self.embedderLayer2 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
-            self.graphNodes = tf.Variable(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32),
-                                          trainable=False)
-            self.graphEdges = tf.Variable(tf.constant(np.random.randn(FLAGS.graph_size, FLAGS.graph_size), tf.float32),
-                                          trainable=False)
+            self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model], trainable=False)
+            self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
             self.projection = tf.keras.layers.Dense(d_model, activation='relu')
             self.pickOut = tf.keras.layers.Dense(1)
             self.layerNorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -464,6 +464,8 @@ def TED_generator(vocab_size, FLAGS):
             compressed, compress_attention = self.embedderLayer1(compressor, x, training, mask)
 
             compressed = self.dropout3(compressed)
+
+            """
             projection_signal = self.projection(compressed)
             projection_signal = self.layerNorm1(projection_signal)
 
@@ -533,26 +535,25 @@ def TED_generator(vocab_size, FLAGS):
             # Cull the weak attentions from self-attention weights and use those for graph edges
             # Use selection to identify the top X nodes for each sample
 
-            pickedOutNodes = tf.reshape(tf.gather_nd(encodedGraph, positions),
-                                        [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
-            print("pickedOutNodes: " + str(pickedOutNodes))
-
             # Self attention on the encoded graphs
-            transformed_graph, graph_attention = self.embedderLayer2(pickedOutNodes, pickedOutNodes, training,
+            encodedGraph = self.dropout4(encodedGraph)
+            """
+            transformed_graph, graph_attention = self.embedderLayer2(compressed, compressed, training,
                                                                      padding_mask=None)
             print("transformed_graph: " + str(transformed_graph))
 
-            # # Find the top X nodes of the encodedGraph to use for the next step
-            # pickoutWeight = self.pickOut(transformed_graph)
-            # print("pickoutWeight: " + str(pickoutWeight))
-            # pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
-            # print("pickOut_attention: " + str(pickOut_attention))
-            #
-            # __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
-            #
-            # pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
-            #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
-            # print("pickedOutNodes: " + str(pickedOutNodes))
+            # Find the top X nodes of the encodedGraph to use for the next step
+            transformed_graph = self.dropout5(transformed_graph)
+            pickoutWeight = self.pickOut(transformed_graph)
+            print("pickoutWeight: " + str(pickoutWeight))
+            pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
+            print("pickOut_attention: " + str(pickOut_attention))
+
+            __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
+
+            pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
+                                        [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
+            print("pickedOutNodes: " + str(pickedOutNodes))
 
             # Embed the edge information based off the graph attention
             # Yet to be implemented, but not necessary for this model
@@ -563,7 +564,7 @@ def TED_generator(vocab_size, FLAGS):
             # return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
             #                                                                          [-1, FLAGS.graph_size])
 
-            return transformed_graph, compress_attention, compress_attention, compress_attention
+            return pickedOutNodes, compress_attention, compress_attention, compress_attention
 
 
     class Decoder(tf.keras.layers.Layer):
