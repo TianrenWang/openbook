@@ -315,9 +315,9 @@ def TED_generator(vocab_size, FLAGS):
     # In[ ]:
 
 
-    class GraphEmbedderLayer(tf.keras.layers.Layer):
+    class CompressionLayer(tf.keras.layers.Layer):
         def __init__(self, d_model, num_heads, dff, rate=0.1):
-            super(GraphEmbedderLayer, self).__init__()
+            super(CompressionLayer, self).__init__()
 
             self.mha = MultiHeadAttention(d_model, num_heads)
 
@@ -341,36 +341,6 @@ def TED_generator(vocab_size, FLAGS):
             ffn_output = self.ffn(out)  # (batch_size, target_seq_len, d_model)
             ffn_output = self.dropout2(ffn_output, training=training)
             out = self.layernorm2(ffn_output + out)  # (batch_size, target_seq_len, d_model)
-
-            return out, attn_weights_block
-
-
-    class GraphEmbedderLayer2(tf.keras.layers.Layer):
-        def __init__(self, d_model, num_heads, dff, rate=0.1):
-            super(GraphEmbedderLayer2, self).__init__()
-
-            self.mha = MultiHeadAttention(d_model, num_heads)
-
-            self.ffn = point_wise_feed_forward_network(d_model, dff)
-
-            self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-            self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-
-            self.dropout1 = tf.keras.layers.Dropout(rate)
-            self.dropout2 = tf.keras.layers.Dropout(rate)
-
-        def call(self, x, enc_output, training, padding_mask):
-            # enc_output.shape == (batch_size, input_seq_len, d_model)
-            # x = the randomly initialized sparse compressor
-
-            # attn, attn_weights_block = self.mha(
-            #     enc_output, enc_output, x, padding_mask, FLAGS.use_sparse)  # (batch_size, target_seq_len, d_model)
-            # attn = self.dropout1(attn, training=training)
-            # out = self.layernorm1(attn + x)  # (batch_size, target_seq_len, d_model)
-            #
-            # ffn_output = self.ffn(out)  # (batch_size, target_seq_len, d_model)
-            # ffn_output = self.dropout2(ffn_output, training=training)
-            # out = self.layernorm2(ffn_output + out)  # (batch_size, target_seq_len, d_model)
 
             return out, attn_weights_block
 
@@ -470,8 +440,8 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout4 = tf.keras.layers.Dropout(rate)
             self.dropout5 = tf.keras.layers.Dropout(rate)
             self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
-            self.embedderLayer1 = GraphEmbedderLayer(d_model, num_heads, dff, rate)
-            self.embedderLayer2 = GraphEmbedderLayer2(d_model, num_heads, dff, rate)
+            self.compressionLayer = CompressionLayer(d_model, num_heads, dff, rate)
+            self.graphEncoderLayer = EncoderLayer(d_model, num_heads, dff, rate)
             self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model], trainable=False)
             self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
             self.projection = tf.keras.layers.Dense(d_model, activation='relu')
@@ -486,14 +456,11 @@ def TED_generator(vocab_size, FLAGS):
             # Compress the encoded signal into a smaller space
             compressor = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor, 0)
             compressor = tf.tile(compressor, [tf.shape(x)[0], 1, 1])
-
             compressor = self.dropout2(compressor, training=training)
+            compressed, compress_attention = self.compressionLayer(compressor, x, training, mask)
+            compressed = self.dropout3(compressed, training=training)
 
-            compressed, compress_attention = self.embedderLayer1(compressor, x, training, mask)
-
-            compressed = self.dropout3(compressed)
-
-            """
+            # Later used to activate the expression of the knowledge graph
             projection_signal = self.projection(compressed)
             projection_signal = self.layerNorm1(projection_signal)
 
@@ -563,11 +530,10 @@ def TED_generator(vocab_size, FLAGS):
             # Cull the weak attentions from self-attention weights and use those for graph edges
             # Use selection to identify the top X nodes for each sample
 
-            # Self attention on the encoded graphs
+            # Self attention on the encoded graph
             encodedGraph = self.dropout4(encodedGraph)
-            """
-            transformed_graph, graph_attention = self.embedderLayer2(compressed, compressed, training,
-                                                                     padding_mask=None)
+
+            transformed_graph, graph_attention = self.graphEncoderLayer(encodedGraph, training, None)
             print("transformed_graph: " + str(transformed_graph))
 
             # Find the top X nodes of the encodedGraph to use for the next step
@@ -579,7 +545,7 @@ def TED_generator(vocab_size, FLAGS):
 
             __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
 
-            pickedOutNodes = tf.reshape(tf.gather_nd(transformed_graph, sparse_indices),
+            pickedOutNodes = tf.reshape(tf.gather_nd(encodedGraph, sparse_indices),
                                         [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
             print("pickedOutNodes: " + str(pickedOutNodes))
 
@@ -589,10 +555,10 @@ def TED_generator(vocab_size, FLAGS):
             # Pickout attentions: the graph nodes that were picked for decoding
             # Projection attention: the graph nodes that were projected onto after the compression
             # Compressed attention: how the original input was compressed
-            # return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
-            #                                                                          [-1, FLAGS.graph_size])
+            return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
+                                                                                     [-1, FLAGS.graph_size])
 
-            return pickedOutNodes, compress_attention, compress_attention, compress_attention
+            # return pickedOutNodes, compress_attention, compress_attention, compress_attention
 
 
     class Decoder(tf.keras.layers.Layer):
