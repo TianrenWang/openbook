@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
     print("X: " + str(x))
 
-    if True:
+    if False:
         pickOut = tf.keras.layers.Dense(1)
         pickoutWeight = pickOut(x)
         print("pickoutWeight: " + str(pickoutWeight))
@@ -51,7 +51,7 @@ if __name__ == '__main__':
                                     [-1, seq, d_model])  # [batch, sparse_len, depth]
         print("pickedOutNodes: " + str(pickedOutNodes))
 
-    if False:
+    if True:
         graphNodes = tf.Variable(tf.constant(np.random.randn(graph_size, d_model), tf.float32), trainable=False)
         compressed = tf.constant(np.random.randn(batch, seq, d_model), tf.float32)
         projection = tf.keras.layers.Dense(d_model)
@@ -80,19 +80,18 @@ if __name__ == '__main__':
 
         # This part is for training, update the graph node embedding
         if training:
-            print("**************Updating Graph Nodes*********************")
             with tf.device('/cpu:0'):
                 ___, idx, count = tf.unique_with_counts(closest_words_ind)
             counts = tf.gather(count, idx)
             counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
             closest_words = tf.gather(graphNodes, closest_words_ind) * alpha
-            compressed = tf.reshape(compressed, [-1, d_model])
-            compressed = compressed * (1 - alpha) / counts
+            normed_compressed = compressed * (1 - alpha) / counts
+            closest_words = tf.tensor_scatter_nd_add(closest_words, tf.reshape(idx, [-1, 1]), normed_compressed)
+            # closest_words = tf.math.l2_normalize(closest_words, -1)
             tf.compat.v1.scatter_nd_update(graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
 
             # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
-            # print("Update: " + str(tf.compat.v1.scatter_nd_add(graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)))
-            tf.compat.v1.scatter_nd_add(graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
+            # tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), normed_compressed)
 
         # This tensor will later be used to visualize which nodes were chosen
         projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),

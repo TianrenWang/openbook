@@ -442,7 +442,8 @@ def TED_generator(vocab_size, FLAGS):
             self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
             self.compressionLayer = CompressionLayer(d_model, num_heads, dff, rate)
             self.graphEncoderLayer = EncoderLayer(d_model, num_heads, dff, rate)
-            self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model], trainable=False)
+            graphNodeInit = tf.math.l2_normalize(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32), axis=-1)
+            self.graphNodes = tf.compat.v1.get_variable("nodes", initializer=graphNodeInit, trainable=False)
             self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
             self.nodeUpdates = tf.Variable(tf.zeros([FLAGS.graph_size, 1]), name='nodeUpdates')
             self.projection = tf.keras.layers.Dense(d_model, activation='relu')
@@ -467,10 +468,11 @@ def TED_generator(vocab_size, FLAGS):
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             compressed = tf.reshape(compressed, [-1, self.d_model])
+            normed_compressed = tf.math.l2_normalize(compressed, -1)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             p1 = tf.matmul(
-                tf.expand_dims(tf.reduce_sum(tf.square(compressed), 1), 1),
+                tf.expand_dims(tf.reduce_sum(tf.square(normed_compressed), 1), 1),
                 tf.ones(shape=(1, FLAGS.graph_size))
             )
             p2 = tf.transpose(tf.matmul(
@@ -479,7 +481,7 @@ def TED_generator(vocab_size, FLAGS):
                 transpose_b=True
             ))
 
-            eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(compressed, self.graphNodes, transpose_b=True))
+            eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(normed_compressed, self.graphNodes, transpose_b=True))
 
             closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1),
                                         tf.int32)  # shape [batch_size * sparse_len], type int64
@@ -492,13 +494,14 @@ def TED_generator(vocab_size, FLAGS):
                 counts = tf.gather(count, idx)
                 counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
                 closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
-                compressed = tf.reshape(compressed, [-1, self.d_model])
-                compressed = compressed * (1 - FLAGS.alpha) / counts
+                normed_compressed = normed_compressed * (1 - FLAGS.alpha) / counts
+                closest_words = tf.tensor_scatter_nd_add(closest_words, tf.reshape(idx, [-1, 1]), normed_compressed)
+                closest_words = tf.math.l2_normalize(closest_words, -1)
                 tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
 
                 # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
-                tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
-                tf.compat.v1.scatter_nd_add(self.nodeUpdates, tf.reshape(closest_words_ind, [-1, 1]), tf.ones([tf.shape(compressed)[0], 1]))
+                # tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), normed_compressed)
+                tf.compat.v1.scatter_nd_add(self.nodeUpdates, tf.reshape(closest_words_ind, [-1, 1]), tf.ones([tf.shape(normed_compressed)[0], 1]))
 
             # This tensor will later be used to visualize which nodes were chosen
             projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),

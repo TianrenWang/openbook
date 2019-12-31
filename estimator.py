@@ -16,6 +16,7 @@ from __future__ import print_function
 
 
 import tensorflow as tf
+import numpy as np
 import matplotlib.pyplot as plt
 
 import transformer_model
@@ -220,6 +221,14 @@ def main(argv=None):
             input_fn=eval_input_fn)
 
         tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
+
+        updates = list(estimator.get_variable_value("nodeUpdates").astype(int))
+        values = estimator.get_variable_value("nodes")
+
+        for i in range(len(updates)):
+            print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
+
+        print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
 
     if FLAGS.predict:
         print("***************************************")
