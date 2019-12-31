@@ -37,7 +37,7 @@ python3 estimator.py \
   --graph_size=512 \
   --batch_size=128 \
   --layers=4 \
-  --depth=128 \
+  --depth=256 \
   --feedforward=512 \
   --train=True \
   --predict=True \

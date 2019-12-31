@@ -444,6 +444,7 @@ def TED_generator(vocab_size, FLAGS):
             self.graphEncoderLayer = EncoderLayer(d_model, num_heads, dff, rate)
             self.graphNodes = tf.compat.v1.get_variable("nodes", [FLAGS.graph_size, d_model], trainable=False)
             self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
+            self.nodeUpdates = tf.Variable(tf.zeros([FLAGS.graph_size, 1]), name='nodeUpdates')
             self.projection = tf.keras.layers.Dense(d_model, activation='relu')
             self.pickOut = tf.keras.layers.Dense(1)
             self.layerNorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -497,6 +498,7 @@ def TED_generator(vocab_size, FLAGS):
 
                 # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
                 tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), compressed)
+                tf.compat.v1.scatter_nd_add(self.nodeUpdates, tf.reshape(closest_words_ind, [-1, 1]), tf.ones([tf.shape(compressed)[0], 1]))
 
             # This tensor will later be used to visualize which nodes were chosen
             projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),
