@@ -439,6 +439,7 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout3 = tf.keras.layers.Dropout(rate)
             self.dropout4 = tf.keras.layers.Dropout(rate)
             self.dropout5 = tf.keras.layers.Dropout(rate)
+            self.dropout6 = tf.keras.layers.Dropout(rate * 3)
             self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
             self.compressionLayer = CompressionLayer(d_model, num_heads, dff, rate)
             self.graphEncoderLayer = EncoderLayer(d_model, num_heads, dff, rate)
@@ -469,6 +470,7 @@ def TED_generator(vocab_size, FLAGS):
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             compressed = tf.reshape(compressed, [-1, self.d_model])
             normed_compressed = tf.math.l2_normalize(compressed, -1)
+            droppedGraph = self.dropout6(self.graphNodes)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             p1 = tf.matmul(
@@ -476,12 +478,12 @@ def TED_generator(vocab_size, FLAGS):
                 tf.ones(shape=(1, FLAGS.graph_size))
             )
             p2 = tf.transpose(tf.matmul(
-                tf.reshape(tf.reduce_sum(tf.square(self.graphNodes), 1), shape=[-1, 1]),
+                tf.reshape(tf.reduce_sum(tf.square(droppedGraph), 1), shape=[-1, 1]),
                 tf.ones(shape=(FLAGS.sparse_len * tf.shape(x)[0], 1)),
                 transpose_b=True
             ))
 
-            eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(normed_compressed, self.graphNodes, transpose_b=True))
+            eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(normed_compressed, droppedGraph, transpose_b=True))
 
             closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1),
                                         tf.int32)  # shape [batch_size * sparse_len], type int64
