@@ -485,8 +485,7 @@ def TED_generator(vocab_size, FLAGS):
 
             eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(normed_compressed, droppedGraph, transpose_b=True))
 
-            closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1),
-                                        tf.int32)  # shape [batch_size * sparse_len], type int64
+            closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
 
             # This part is for training, update the graph node embedding
             if training:

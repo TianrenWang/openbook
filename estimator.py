@@ -222,13 +222,14 @@ def main(argv=None):
 
         tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
 
-        updates = list(estimator.get_variable_value("nodeUpdates").astype(int))
+        updates = estimator.get_variable_value("nodeUpdates").astype(int)
         values = estimator.get_variable_value("nodes")
 
         for i in range(len(updates)):
             print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
 
         print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
+        print("total: " + str(np.sum(updates)))
 
     if FLAGS.predict:
         print("***************************************")
