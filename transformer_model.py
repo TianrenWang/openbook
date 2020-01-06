@@ -440,9 +440,10 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout4 = tf.keras.layers.Dropout(rate)
             self.dropout5 = tf.keras.layers.Dropout(rate)
             self.dropout6 = tf.keras.layers.Dropout(rate * 3)
-            self.compressor = tf.compat.v1.get_variable("compressor", [seq_len, d_model])
-            self.compressionLayer = CompressionLayer(d_model, num_heads, dff, rate)
-            self.graphEncoderLayer = EncoderLayer(d_model, num_heads, dff, rate)
+            self.compressor1 = tf.compat.v1.get_variable("compressor1", [seq_len, d_model])
+            self.compressor2 = tf.compat.v1.get_variable("compressor2", [seq_len, d_model])
+            self.compressionLayer1 = CompressionLayer(d_model, num_heads, dff, rate)
+            self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)
             graphNodeInit = tf.math.l2_normalize(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32), axis=-1)
             self.graphNodes = tf.compat.v1.get_variable("nodes", initializer=graphNodeInit, trainable=False)
             self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
@@ -457,19 +458,19 @@ def TED_generator(vocab_size, FLAGS):
             x = self.dropout1(x, training=training)
 
             # Compress the encoded signal into a smaller space
-            compressor = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor, 0)
-            compressor = tf.tile(compressor, [tf.shape(x)[0], 1, 1])
-            compressor = self.dropout2(compressor, training=training)
-            compressed, compress_attention = self.compressionLayer(compressor, x, training, mask)
-            compressed = self.dropout3(compressed, training=training)
+            compressor1 = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor1, 0)
+            compressor1 = tf.tile(compressor1, [tf.shape(x)[0], 1, 1])
+            compressor1 = self.dropout2(compressor1, training=training)
+            compressed1, compress_attention = self.compressionLayer1(compressor1, x, training, mask)
+            compressed1 = self.dropout3(compressed1, training=training)
 
             # Later used to activate the expression of the knowledge graph
-            projection_signal = self.projection(compressed)
+            projection_signal = self.projection(compressed1)
             projection_signal = self.layerNorm1(projection_signal)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
-            compressed = tf.reshape(compressed, [-1, self.d_model])
-            normed_compressed = tf.math.l2_normalize(compressed, -1)
+            compressed1 = tf.reshape(compressed1, [-1, self.d_model])
+            normed_compressed = tf.math.l2_normalize(compressed1, -1)
             droppedGraph = self.dropout6(self.graphNodes)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
@@ -520,7 +521,7 @@ def TED_generator(vocab_size, FLAGS):
             positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
             positions = tf.cast(positions, tf.int32)
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
-            print("compressed: " + str(compressed))
+            print("compressed: " + str(compressed1))
             print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
             projection_signal = tf.reshape(projection_signal, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
             print("projection_signal: " + str(projection_signal))
@@ -536,24 +537,32 @@ def TED_generator(vocab_size, FLAGS):
             # Cull the weak attentions from self-attention weights and use those for graph edges
             # Use selection to identify the top X nodes for each sample
 
-            # Self attention on the encoded graph
+            '''
+            The main reason why it is necessary to be able to pickout the correct nodes from the entire graph is because
+            the graph neural network is going to need to keep track of the states of each node, and the activation signal
+            can act as activated state.
+            '''
+
+            # Compress the encoded signal into a smaller space
+            compressor2 = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor2, 0)
+            compressor2 = tf.tile(compressor2, [tf.shape(x)[0], 1, 1])
             encodedGraph = self.dropout4(encodedGraph)
 
-            transformed_graph, graph_attention = self.graphEncoderLayer(encodedGraph, training, None)
-            print("transformed_graph: " + str(transformed_graph))
+            compressed2, compress_attention2 = self.compressionLayer2(compressor2, encodedGraph, training, None)
+            print("transformed_graph: " + str(compressed2))
 
             # Find the top X nodes of the encodedGraph to use for the next step
-            transformed_graph = self.dropout5(transformed_graph)
-            pickoutWeight = self.pickOut(transformed_graph)
-            print("pickoutWeight: " + str(pickoutWeight))
-            pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
-            print("pickOut_attention: " + str(pickOut_attention))
-
-            __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
-
-            pickedOutNodes = tf.reshape(tf.gather_nd(encodedGraph, sparse_indices),
-                                        [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
-            print("pickedOutNodes: " + str(pickedOutNodes))
+            # transformed_graph = self.dropout5(transformed_graph)
+            # pickoutWeight = self.pickOut(transformed_graph)
+            # print("pickoutWeight: " + str(pickoutWeight))
+            # pickOut_attention = tf.squeeze(tf.nn.softmax(pickoutWeight, axis=-1), axis=[2])
+            # print("pickOut_attention: " + str(pickOut_attention))
+            #
+            # __, sparse_indices = sparsify(pickOut_attention, FLAGS.sparse_len)
+            #
+            # pickedOutNodes = tf.reshape(tf.gather_nd(encodedGraph, sparse_indices),
+            #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
+            # print("pickedOutNodes: " + str(pickedOutNodes))
 
             # Embed the edge information based off the graph attention
             # Yet to be implemented, but not necessary for this model
@@ -561,7 +570,7 @@ def TED_generator(vocab_size, FLAGS):
             # Pickout attentions: the graph nodes that were picked for decoding
             # Projection attention: the graph nodes that were projected onto after the compression
             # Compressed attention: how the original input was compressed
-            return pickedOutNodes, compress_attention, pickOut_attention, tf.reshape(projection_attention,
+            return compressed2, compress_attention, compress_attention2, tf.reshape(projection_attention,
                                                                                      [-1, FLAGS.graph_size])
 
             # return pickedOutNodes, compress_attention, compress_attention, compress_attention
