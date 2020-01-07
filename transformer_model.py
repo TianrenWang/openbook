@@ -449,8 +449,10 @@ def TED_generator(vocab_size, FLAGS):
             self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
             self.nodeUpdates = tf.Variable(tf.zeros([FLAGS.graph_size, 1]), name='nodeUpdates')
             self.projection = tf.keras.layers.Dense(d_model, activation='relu')
+            self.nodeActivation = tf.keras.layers.Dense(d_model, activation='relu')
             self.pickOut = tf.keras.layers.Dense(1)
             self.layerNorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+            self.layerNorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         @tf.function
         def call(self, x, training, mask):
@@ -528,6 +530,8 @@ def TED_generator(vocab_size, FLAGS):
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
             print("encodedGraph: " + str(encodedGraph))
+            encodedGraph = self.nodeActivation(encodedGraph)
+            encodedGraph = self.layerNorm2(encodedGraph)
 
             # I should let each node of the graph reconciliate with every other node, thus I need a self-attention
             # transformer. I can use the attention weights as the edges, but they will be culled by ReLU.
