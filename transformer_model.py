@@ -441,7 +441,6 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout5 = tf.keras.layers.Dropout(rate)
             self.dropout6 = tf.keras.layers.Dropout(rate * 3)
             self.compressor1 = tf.compat.v1.get_variable("compressor1", [seq_len, d_model])
-            self.compressor2 = tf.compat.v1.get_variable("compressor2", [seq_len, d_model])
             self.compressionLayer1 = CompressionLayer(d_model, num_heads, dff, rate)
             self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)
             graphNodeInit = tf.math.l2_normalize(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32), axis=-1)
@@ -548,12 +547,11 @@ def TED_generator(vocab_size, FLAGS):
             '''
 
             # Compress the encoded signal into a smaller space
-            compressor2 = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor2, 0)
-            compressor2 = tf.tile(compressor2, [tf.shape(x)[0], 1, 1])
             encodedGraph = self.dropout4(encodedGraph)
+            compressed1 = tf.reshape(compressed1, [-1, FLAGS.sparse_len, self.d_model])
 
-            compressed2, compress_attention2 = self.compressionLayer2(compressor2, encodedGraph, training, None)
-            print("transformed_graph: " + str(compressed2))
+            compressed2, compress_attention2 = self.compressionLayer2(compressed1, encodedGraph, training, None)
+            print("compressed2: " + str(compressed2))
 
             # Find the top X nodes of the encodedGraph to use for the next step
             # transformed_graph = self.dropout5(transformed_graph)
