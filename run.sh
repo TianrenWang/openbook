@@ -31,7 +31,7 @@ python3 estimator.py \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
-  --conc=1.4 \
+  --conc=3 \
   --sparse_loss=0 \
   --alpha=0.9 \
   --graph_size=512 \
