@@ -572,8 +572,8 @@ def TED_generator(vocab_size, FLAGS):
             # Pickout attentions: the graph nodes that were picked for decoding
             # Projection attention: the graph nodes that were projected onto after the compression
             # Compressed attention: how the original input was compressed
-            return compressed2, compress_attention, compress_attention2, tf.reshape(projection_attention,
-                                                                                     [-1, FLAGS.graph_size])
+            return compressed2, compress_attention, compress_attention2, tf.reshape(closest_words_ind,
+                                                                                    [-1, FLAGS.sparse_len])
 
             # return pickedOutNodes, compress_attention, compress_attention, compress_attention
 
