@@ -258,6 +258,9 @@ def main(argv=None):
             print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
+            print("pickout attention: " + str(result['pickout_attention'].max(-1)))
+            print("pickout indices: " + str(np.argmax(result['pickout_attention'], -1)))
+            print("projection_attention: " + str(result['projection_attention']))
             plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
 
             if i + 1 == FLAGS.predict_samples:
