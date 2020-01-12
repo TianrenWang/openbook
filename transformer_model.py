@@ -439,7 +439,7 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout3 = tf.keras.layers.Dropout(rate)
             self.dropout4 = tf.keras.layers.Dropout(rate * 5)
             self.dropout5 = tf.keras.layers.Dropout(rate)
-            self.dropout6 = tf.keras.layers.Dropout(rate * 3)
+            self.dropout6 = tf.keras.layers.Dropout(rate)
             self.compressor1 = tf.compat.v1.get_variable("compressor1", [seq_len, d_model])
             self.compressionLayer1 = CompressionLayer(d_model, num_heads, dff, rate)
             self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)
@@ -463,6 +463,8 @@ def TED_generator(vocab_size, FLAGS):
             compressor1 = tf.tile(compressor1, [tf.shape(x)[0], 1, 1])
             compressor1 = self.dropout2(compressor1, training=training)
             compressed1, compress_attention = self.compressionLayer1(compressor1, x, training, mask)
+
+            '''
             compressed1 = self.dropout3(compressed1, training=training)
 
             # Later used to activate the expression of the knowledge graph
@@ -541,9 +543,11 @@ def TED_generator(vocab_size, FLAGS):
             # Use selection to identify the top X nodes for each sample
 
             '''
+            '''
             The main reason why it is necessary to be able to pickout the correct nodes from the entire graph is because
             the graph neural network is going to need to keep track of the states of each node, and the activation signal
             can act as activated state.
+            '''
             '''
 
             # Compress the encoded signal into a smaller space
@@ -574,8 +578,8 @@ def TED_generator(vocab_size, FLAGS):
             # Compressed attention: how the original input was compressed
             return compressed2, compress_attention, compress_attention2, tf.reshape(closest_words_ind,
                                                                                     [-1, FLAGS.sparse_len])
-
-            # return pickedOutNodes, compress_attention, compress_attention, compress_attention
+            '''
+            return compressed1, compress_attention, compress_attention, compress_attention
 
 
     class Decoder(tf.keras.layers.Layer):

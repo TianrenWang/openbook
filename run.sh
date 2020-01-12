@@ -23,11 +23,11 @@ python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
   --train_steps=200000 \
-  --vocab_level=13 \
+  --vocab_level=12 \
   --dropout=0.1 \
   --heads=8 \
-  --seq_len=40 \
-  --sparse_len=8 \
+  --seq_len=36 \
+  --sparse_len=2 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
@@ -35,9 +35,9 @@ python3 estimator.py \
   --sparse_loss=0 \
   --alpha=0.9 \
   --graph_size=512 \
-  --batch_size=128 \
+  --batch_size=64 \
   --layers=4 \
-  --depth=256 \
+  --depth=128 \
   --feedforward=512 \
   --train=True \
   --predict=True \
