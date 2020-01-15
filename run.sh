@@ -20,13 +20,13 @@ GS_MODEL_DIR=${GS_ROOT}/experiment/race
 TPU_NAME=
 
 python3 estimator.py \
-  --data_dir=data/openbook.txt \
+  --data_dir=data/openbook_facts.txt \
   --model_dir=model/ \
   --train_steps=200000 \
   --vocab_level=12 \
   --dropout=0.1 \
   --heads=8 \
-  --seq_len=128 \
+  --seq_len=36 \
   --batch_size=64 \
   --layers=4 \
   --depth=128 \

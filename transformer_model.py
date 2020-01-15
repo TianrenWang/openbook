@@ -256,6 +256,31 @@ def TED_generator(vocab_size, FLAGS):
             return out2
 
 
+    class CompressionLayer(tf.keras.layers.Layer):
+        def __init__(self, d_model, dff, rate=0.1):
+            super(CompressionLayer, self).__init__()
+
+            self.mha = MultiHeadAttention(d_model, 1)
+            self.ffn = point_wise_feed_forward_network(d_model, dff)
+
+            self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+            self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+
+            self.dropout1 = tf.keras.layers.Dropout(rate)
+            self.dropout2 = tf.keras.layers.Dropout(rate)
+
+        def call(self, x, enc_out, training, mask):
+            attn_output, _ = self.mha(enc_out, enc_out, x, mask)  # (batch_size, input_seq_len, d_model)
+            attn_output = self.dropout1(attn_output, training=training)
+            out1 = self.layernorm1(x + attn_output)  # (batch_size, input_seq_len, d_model)
+
+            ffn_output = self.ffn(out1)  # (batch_size, input_seq_len, d_model)
+            ffn_output = self.dropout2(ffn_output, training=training)
+            out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, input_seq_len, d_model)
+
+            return out2
+
+
     # ### Decoder layer
     #
     # Each decoder layer consists of sublayers:
@@ -366,6 +391,24 @@ def TED_generator(vocab_size, FLAGS):
 
     # In[ ]:
 
+    class Compressor(tf.keras.layers.Layer):
+        def __init__(self, d_model, dff, rate=0.1):
+            super(Compressor, self).__init__()
+
+            self.d_model = d_model
+
+            # dff is basically the number of units in the intermediate dense layer
+            self.enc_layers = CompressionLayer(d_model, dff, rate)
+
+            self.dropout = tf.keras.layers.Dropout(rate)
+
+        def call(self, x, training, mask):
+
+            x = self.dropout(x, training=training)
+            x = self.enc_layers(x, x, training, mask)
+
+            return x  # (batch_size, input_seq_len, d_model)
+
 
     class Decoder(tf.keras.layers.Layer):
         def __init__(self, num_layers, d_model, num_heads, dff, target_vocab_size,
@@ -437,6 +480,8 @@ def TED_generator(vocab_size, FLAGS):
             self.encoder = Encoder(num_layers, d_model, num_heads, dff,
                                    vocab_size, self.embedding, rate)
 
+            self.compressor = Compressor(d_model, dff, rate)
+
             self.decoder = Decoder(num_layers, d_model, num_heads, dff,
                                    vocab_size, self.embedding, rate)
 
@@ -445,9 +490,11 @@ def TED_generator(vocab_size, FLAGS):
         def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask, dec_padding_mask):
             enc_output = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
+            compressor_out = self.compressor(enc_output, training, enc_padding_mask)
+
             # dec_output.shape == (batch_size, tar_seq_len, d_model)
             dec_output, attention_weights = self.decoder(
-                tar, enc_output, training, look_ahead_mask, dec_padding_mask)
+                tar, compressor_out, training, look_ahead_mask, dec_padding_mask)
 
             final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
