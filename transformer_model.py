@@ -57,6 +57,15 @@ def TED_generator(vocab_size, FLAGS):
         return mask  # (seq_len, seq_len)
 
 
+    def sparsify(attention, k):
+        top_values, top_indices = tf.math.top_k(attention, k)
+        positions = tf.where(tf.not_equal(top_indices, 99999))
+        top_indices = tf.reshape(top_indices, [tf.size(top_indices), 1])
+        positions = tf.slice(positions, [0, 0], [-1, len(attention.get_shape().as_list()) - 1])
+        positions = tf.cast(positions, tf.int32)
+        actual_indices = tf.concat([positions, top_indices], -1)
+        top_values = tf.reshape(top_values, [tf.size(top_values)])
+        return top_values, actual_indices
 
     # ## Scaled dot product attention
 
@@ -396,21 +405,24 @@ def TED_generator(vocab_size, FLAGS):
             super(Compressor, self).__init__()
 
             self.d_model = d_model
+            self.sparse_len = 3
 
             # dff is basically the number of units in the intermediate dense layer
+            self.pickAttention = tf.keras.layers.Dense(1, activation='relu')
             self.compress_layer = CompressionLayer(d_model, dff, rate)
 
             self.dropout = tf.keras.layers.Dropout(rate)
-            self.compressor = tf.compat.v1.get_variable("compressor", [2, self.d_model])
 
         def call(self, x, training, mask):
 
-            compressor = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor, 0)
-            compressor = tf.tile(compressor, [tf.shape(x)[0], 1, 1])
-            compressor = self.dropout(compressor, training=training)
-            print("Compressor: " + str(compressor))
+            pickout_weight = self.pickAttention(x)
+            pickOut_attention = tf.squeeze(tf.nn.softmax(pickout_weight, axis=-1), axis=[2])
+            __, sparse_indices = sparsify(pickOut_attention, self.sparse_len)
+            compressed = tf.reshape(tf.gather_nd(x, sparse_indices),
+                                        [-1, self.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
+            print("Compressed: " + str(compressed))
 
-            compressed = self.compress_layer(compressor, x, training, mask)
+            compressed = self.compress_layer(compressed, x, training, mask)
 
             return compressed  # (batch_size, input_seq_len, d_model)
 
