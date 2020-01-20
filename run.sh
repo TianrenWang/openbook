@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --gres=gpu:p100:1        # request GPU "generic resource"
-#SBATCH --cpus-per-task=6   # maximum CPU cores per GPU request: 6 on Cedar, 16$
-#SBATCH --mem=32000M        # memory per node
+#SBATCH --cpus-per-task=3   # maximum CPU cores per GPU request: 6 on Cedar, 16$
+#SBATCH --mem=12000M        # memory per node
 #SBATCH --time=0-04:00      # time (DD-HH:MM)
 #SBATCH --output=output.out  # %N for node name, %j for jobID
 
@@ -26,14 +26,14 @@ python3 estimator.py \
   --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \
-  --seq_len=40 \
+  --seq_len=36 \
   --sparse_len=8 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
   --conc=1.4 \
   --sparse_loss=0 \
-  --batch_size=128 \
+  --batch_size=64 \
   --layers=4 \
   --depth=128 \
   --feedforward=512 \
