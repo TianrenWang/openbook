@@ -32,6 +32,7 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
     accumulate_facts("Annotation.txt")
     accumulate_facts("scitail.txt")
     accumulate_facts("quartz.txt")
+    accumulate_facts("sciq.txt")
 
     shuffle(facts)
 
