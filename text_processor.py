@@ -22,7 +22,7 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
         line = data.readline().capitalize()
 
         while line:
-            facts.append(str.encode(line[:-1]))
+            facts.append(str.encode(line[:-2]))
             line = data.readline()
 
         data.close()
