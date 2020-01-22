@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --gres=gpu:v100:1        # request GPU "generic resource"
+#SBATCH --gres=gpu:p100:1        # request GPU "generic resource"
 #SBATCH --cpus-per-task=3   # maximum CPU cores per GPU request: 6 on Cedar, 16$
 #SBATCH --mem=12000M        # memory per node
 #SBATCH --time=0-04:00      # time (DD-HH:MM)
@@ -22,12 +22,12 @@ TPU_NAME=
 python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
-  --train_steps=200000 \
-  --vocab_level=12 \
+  --train_steps=300000 \
+  --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \
-  --seq_len=36 \
-  --sparse_len=2 \
+  --seq_len=40 \
+  --sparse_len=8 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
