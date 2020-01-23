@@ -78,12 +78,13 @@ encoderLayerNames = ['encoder_layer{}'.format(i + 1) for i in range(FLAGS.layers
 
 
 def model_fn(features, labels, mode, params):
-    facts = features["input_ids"]
+    sentences = features["input_ids"]
+    facts = tf.cast(features["input_fact"], tf.int32)
     vocab_size = params['vocab_size'] + 2
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
+    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -100,7 +101,7 @@ def model_fn(features, labels, mode, params):
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / FLAGS.conc
     sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1)
-    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
+    loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
@@ -146,7 +147,8 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
 
     name_to_features = {
         "input_ids": tf.io.FixedLenFeature([sequence_length], tf.int64),
-        "input_len": tf.io.FixedLenFeature([1], tf.int64)
+        "input_len": tf.io.FixedLenFeature([1], tf.int64),
+        "input_fact": tf.io.FixedLenFeature([1], tf.int64)
     }
 
     def _decode_record(record, name_to_features):

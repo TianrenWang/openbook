@@ -454,13 +454,15 @@ def TED_generator(vocab_size, FLAGS):
             self.layerNorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         @tf.function
-        def call(self, x, training, mask):
+        def call(self, x, facts, training, mask):
 
             x = self.dropout1(x, training=training)
 
+            batch_size = tf.shape(x)[0]
+
             # Compress the encoded signal into a smaller space
             compressor1 = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor1, 0)
-            compressor1 = tf.tile(compressor1, [tf.shape(x)[0], 1, 1])
+            compressor1 = tf.tile(compressor1, [batch_size, 1, 1])
             compressor1 = self.dropout2(compressor1, training=training)
             compressed1, compress_attention = self.compressionLayer1(compressor1, x, training, mask)
 
@@ -482,13 +484,15 @@ def TED_generator(vocab_size, FLAGS):
             )
             p2 = tf.transpose(tf.matmul(
                 tf.reshape(tf.reduce_sum(tf.square(droppedGraph), 1), shape=[-1, 1]),
-                tf.ones(shape=(FLAGS.sparse_len * tf.shape(x)[0], 1)),
+                tf.ones(shape=(FLAGS.sparse_len * batch_size, 1)),
                 transpose_b=True
             ))
 
             eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(normed_compressed, droppedGraph, transpose_b=True))
 
             closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
+            tiled_facts = tf.reshape(tf.tile(facts, [1, FLAGS.sparse_len]), tf.shape(closest_words_ind))
+            closest_words_ind *= tiled_facts
 
             # This part is for training, update the graph node embedding
             if training:
@@ -517,7 +521,7 @@ def TED_generator(vocab_size, FLAGS):
             closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
             norm_duplicate = tf.expand_dims(tf.map_fn(normalize_unique, closest_words_ind_batched, dtype=tf.float32), -1)
             print("norm_duplicate: "  + str(norm_duplicate))
-            batched_nodes = tf.reshape(tf.tile(self.graphNodes, [tf.shape(x)[0], 1]), [-1] + self.graphNodes.get_shape().as_list())
+            batched_nodes = tf.reshape(tf.tile(self.graphNodes, [batch_size, 1]), [-1] + self.graphNodes.get_shape().as_list())
             print("batched_nodes: " + str(batched_nodes))
             positions = tf.where(tf.not_equal(closest_words_ind_batched, 99999))
             positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
@@ -533,14 +537,6 @@ def TED_generator(vocab_size, FLAGS):
             encodedGraph = self.nodeActivation(encodedGraph)
             encodedGraph = self.layerNorm2(encodedGraph)
 
-            # I should let each node of the graph reconciliate with every other node, thus I need a self-attention
-            # transformer. I can use the attention weights as the edges, but they will be culled by ReLU.
-
-            # Current workflow
-            # Self-attention transformer on all nodes
-            # Cull the weak attentions from self-attention weights and use those for graph edges
-            # Use selection to identify the top X nodes for each sample
-
             '''
             The main reason why it is necessary to be able to pickout the correct nodes from the entire graph is because
             the graph neural network is going to need to keep track of the states of each node, and the activation signal
@@ -553,6 +549,10 @@ def TED_generator(vocab_size, FLAGS):
 
             compressed2, compress_attention2 = self.compressionLayer2(compressed1, encodedGraph, training, None)
             print("compressed2: " + str(compressed2))
+
+            facts = tf.cast(tf.expand_dims(facts, -1), tf.float32)
+
+            compressed2 = compressed2 * facts + compressed1 * tf.cast(tf.math.equal(facts, 0), tf.float32)
 
             # Find the top X nodes of the encodedGraph to use for the next step
             # transformed_graph = self.dropout5(transformed_graph)
@@ -657,10 +657,10 @@ def TED_generator(vocab_size, FLAGS):
 
             self.final_layer = tf.keras.layers.Dense(vocab_size)
 
-        def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask):
+        def call(self, inp, tar, facts, training, enc_padding_mask, look_ahead_mask):
             enc_output, encoder_attention_weights = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
-            sparse_out, compress_attention, pickOut_attention, projection_attention = self.sparseEncoder(enc_output, training, enc_padding_mask)
+            sparse_out, compress_attention, pickOut_attention, projection_attention = self.sparseEncoder(enc_output, facts, training, enc_padding_mask)
 
             batch = tf.shape(sparse_out)[0]
             sparse_mask = create_padding_mask(tf.ones([batch, self.sparse_len]))
@@ -672,13 +672,13 @@ def TED_generator(vocab_size, FLAGS):
 
             return final_output, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention
 
-    def model(fact, is_training):
-        predicted = tf.slice(fact, [0,0], [-1, fact.get_shape()[1]-1])
+    def model(sentences, facts, is_training):
+        predicted = tf.slice(sentences, [0, 0], [-1, sentences.get_shape()[1] - 1])
         """Constructs the ResNet model given the inputs."""
 
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(fact, predicted)
+        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(sentences, predicted)
 
         transformer = Transformer(FLAGS.layers, FLAGS.depth, FLAGS.heads, FLAGS.feedforward, vocab_size, FLAGS.sparse_len, FLAGS.dropout)
-        return transformer(fact, predicted, is_training, enc_padding_mask, combined_mask)
+        return transformer(sentences, predicted, facts, is_training, enc_padding_mask, combined_mask)
 
     return model
