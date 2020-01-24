@@ -100,7 +100,7 @@ def model_fn(features, labels, mode, params):
     sparse_loss = tf.math.square(pickOut_attention * FLAGS.conc)
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / FLAGS.conc
     sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1)
+    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) * tf.cast(facts, tf.float32)
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
 
     # Create a tensor named cross_entropy for logging purposes.

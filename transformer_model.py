@@ -551,8 +551,9 @@ def TED_generator(vocab_size, FLAGS):
             print("compressed2: " + str(compressed2))
 
             facts = tf.cast(tf.expand_dims(facts, -1), tf.float32)
+            not_facts = 1 - facts
 
-            compressed2 = compressed2 * facts + compressed1 * tf.cast(tf.math.equal(facts, 0), tf.float32)
+            compressed2 = compressed2 * facts + compressed1 * not_facts
 
             # Find the top X nodes of the encodedGraph to use for the next step
             # transformed_graph = self.dropout5(transformed_graph)
