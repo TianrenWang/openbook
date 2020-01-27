@@ -61,11 +61,11 @@ def TED_generator(vocab_size, FLAGS):
     # then return a y whose values in those positions are 1/3 = 0.33.
 
     def normalize_unique(x):
-        print("normalize_unique: " + str(x))
+        # print("normalize_unique: " + str(x))
         with tf.device('/cpu:0'):
             ___, idx, count = tf.unique_with_counts(x)
         counts = tf.gather(count, idx)
-        print("counts: " + str(tf.cast(1/counts, tf.float32)))
+        # print("counts: " + str(tf.cast(1/counts, tf.float32)))
         return tf.cast(1/counts, tf.float32)
 
 
@@ -454,7 +454,7 @@ def TED_generator(vocab_size, FLAGS):
             self.layerNorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         @tf.function
-        def call(self, x, facts, training, mask):
+        def call(self, x, facts, training, embedding, mask):
 
             x = self.dropout1(x, training=training)
 
@@ -495,7 +495,7 @@ def TED_generator(vocab_size, FLAGS):
             closest_words_ind *= tiled_facts
 
             # This part is for training, update the graph node embedding
-            if training:
+            if training and embedding:
                 print("**************Updating Graph Nodes*********************")
                 with tf.device('/cpu:0'):
                     ___, idx, count = tf.unique_with_counts(closest_words_ind)
@@ -515,25 +515,25 @@ def TED_generator(vocab_size, FLAGS):
             projection_attention = tf.scatter_nd(tf.reshape(closest_words_ind, [-1, 1]),
                                                  tf.ones([tf.size(closest_words_ind), 1]),
                                                  [FLAGS.graph_size, 1])
-            print("projection_attention: " + str(projection_attention))
+            # print("projection_attention: " + str(projection_attention))
 
             # Project signal to the same nodes for added expressiveness
             closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
             norm_duplicate = tf.expand_dims(tf.map_fn(normalize_unique, closest_words_ind_batched, dtype=tf.float32), -1)
-            print("norm_duplicate: "  + str(norm_duplicate))
+            # print("norm_duplicate: "  + str(norm_duplicate))
             batched_nodes = tf.reshape(tf.tile(self.graphNodes, [batch_size, 1]), [-1] + self.graphNodes.get_shape().as_list())
-            print("batched_nodes: " + str(batched_nodes))
+            # print("batched_nodes: " + str(batched_nodes))
             positions = tf.where(tf.not_equal(closest_words_ind_batched, 99999))
             positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
             positions = tf.cast(positions, tf.int32)
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
-            print("compressed: " + str(compressed1))
-            print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
+            # print("compressed: " + str(compressed1))
+            # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
             projection_signal = tf.reshape(projection_signal, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
-            print("projection_signal: " + str(projection_signal))
+            # print("projection_signal: " + str(projection_signal))
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
-            print("encodedGraph: " + str(encodedGraph))
+            # print("encodedGraph: " + str(encodedGraph))
             encodedGraph = self.nodeActivation(encodedGraph)
             encodedGraph = self.layerNorm2(encodedGraph)
 
@@ -548,12 +548,14 @@ def TED_generator(vocab_size, FLAGS):
             compressed1 = tf.reshape(compressed1, [-1, FLAGS.sparse_len, self.d_model])
 
             compressed2, compress_attention2 = self.compressionLayer2(compressed1, encodedGraph, training, None)
-            print("compressed2: " + str(compressed2))
+            # print("compressed2: " + str(compressed2))
 
             facts = tf.cast(tf.expand_dims(facts, -1), tf.float32)
             not_facts = 1 - facts
 
             compressed2 = compressed2 * facts + compressed1 * not_facts
+
+            compressed = tf.cond(tf.constant(embedding), lambda: compressed2, lambda: compressed1)
 
             # Find the top X nodes of the encodedGraph to use for the next step
             # transformed_graph = self.dropout5(transformed_graph)
@@ -574,7 +576,7 @@ def TED_generator(vocab_size, FLAGS):
             # Pickout attentions: the graph nodes that were picked for decoding
             # Projection attention: the graph nodes that were projected onto after the compression
             # Compressed attention: how the original input was compressed
-            return compressed2, compress_attention, compress_attention2, tf.reshape(closest_words_ind,
+            return compressed, compress_attention, compress_attention2, tf.reshape(closest_words_ind,
                                                                                     [-1, FLAGS.sparse_len])
 
             # return compressed1, compress_attention, compress_attention, compress_attention
@@ -658,10 +660,10 @@ def TED_generator(vocab_size, FLAGS):
 
             self.final_layer = tf.keras.layers.Dense(vocab_size)
 
-        def call(self, inp, tar, facts, training, enc_padding_mask, look_ahead_mask):
+        def call(self, inp, tar, facts, training, embedding, enc_padding_mask, look_ahead_mask):
             enc_output, encoder_attention_weights = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
-            sparse_out, compress_attention, pickOut_attention, projection_attention = self.sparseEncoder(enc_output, facts, training, enc_padding_mask)
+            sparse_out, compress_attention, pickOut_attention, projection_attention = self.sparseEncoder(enc_output, facts, training, embedding, enc_padding_mask)
 
             batch = tf.shape(sparse_out)[0]
             sparse_mask = create_padding_mask(tf.ones([batch, self.sparse_len]))
@@ -673,13 +675,13 @@ def TED_generator(vocab_size, FLAGS):
 
             return final_output, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention
 
-    def model(sentences, facts, is_training):
+    def model(sentences, facts, is_training, is_embedding):
         predicted = tf.slice(sentences, [0, 0], [-1, sentences.get_shape()[1] - 1])
         """Constructs the ResNet model given the inputs."""
 
         enc_padding_mask, combined_mask, dec_padding_mask = create_masks(sentences, predicted)
 
         transformer = Transformer(FLAGS.layers, FLAGS.depth, FLAGS.heads, FLAGS.feedforward, vocab_size, FLAGS.sparse_len, FLAGS.dropout)
-        return transformer(sentences, predicted, facts, is_training, enc_padding_mask, combined_mask)
+        return transformer(sentences, predicted, facts, is_training, is_embedding, enc_padding_mask, combined_mask)
 
     return model

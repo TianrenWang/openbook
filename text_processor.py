@@ -86,6 +86,25 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
     write_tfrecords(samples[-2000:], facts_indicator[-2000:], "testing")
     write_tfrecords(samples[-2000:], facts_indicator[-2000:], "predict")
 
+    train_facts = samples[:-2000]
+    train_facts_indictator = facts_indicator[:-2000]
+
+    train_facts = [train_facts[i] for i in range(len(train_facts_indictator)) if train_facts_indictator[i]]
+    train_facts_indictator = [i for i in train_facts_indictator if i]
+    print(train_facts[:3])
+    print(train_facts_indictator[:3])
+
+    test_facts = samples[-2000:]
+    test_facts_indictator = facts_indicator[-2000:]
+
+    test_facts = [test_facts[i] for i in range(len(test_facts_indictator)) if test_facts_indictator[i]]
+    print(test_facts[:3])
+    test_facts_indictator = [i for i in test_facts_indictator if i]
+    print(test_facts_indictator[:3])
+
+    write_tfrecords(train_facts, train_facts_indictator, "facts_only_training")
+    write_tfrecords(test_facts, test_facts_indictator, "facts_only_testing")
+
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):
     #     print(str(i) + ": " + str(length))
