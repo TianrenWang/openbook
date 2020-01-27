@@ -287,7 +287,7 @@ def main(argv=None):
         print("***************************************")
 
         pred_input_fn = file_based_input_fn_builder(
-            input_file="predict",
+            input_file="facts_only_testing",
             sequence_length=FLAGS.seq_len,
             batch_size=1,
             is_training=False,
