@@ -440,6 +440,7 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout4 = tf.keras.layers.Dropout(rate * 5)
             self.dropout5 = tf.keras.layers.Dropout(rate)
             self.dropout6 = tf.keras.layers.Dropout(rate)
+            self.sparse_len = seq_len
             self.compressionLayer1 = CompressionLayer(d_model, num_heads, dff, rate)
             self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)
             graphNodeInit = tf.math.l2_normalize(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32), axis=-1)
@@ -460,7 +461,7 @@ def TED_generator(vocab_size, FLAGS):
             batch_size = tf.shape(x)[0]
 
             # Compress the encoded signal into a smaller space
-            pickout_weight = self.pickAttention(x)
+            pickout_weight = self.pickOut(x)
             pickOut_attention = tf.squeeze(tf.nn.softmax(pickout_weight, axis=-1), axis=[2])
             __, sparse_indices = sparsify(pickOut_attention, self.sparse_len)
             pickedOut = tf.reshape(tf.gather_nd(x, sparse_indices),
