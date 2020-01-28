@@ -29,8 +29,10 @@ flags.DEFINE_string("data_dir", default="data/",
       help="data directory")
 flags.DEFINE_string("model_dir", default="model/",
       help="directory of model")
-flags.DEFINE_integer("train_steps", default=10000,
+flags.DEFINE_integer("train_steps", default=100000,
       help="number of training steps")
+flags.DEFINE_integer("embed_steps", default=50000,
+      help="number of embedding steps")
 flags.DEFINE_integer("vocab_level", default=13,
       help="base 2 exponential of the expected vocab size")
 flags.DEFINE_float("dropout", default=0.3,
@@ -56,7 +58,9 @@ flags.DEFINE_float("alpha", default=0.98,
 flags.DEFINE_integer("graph_size", default=512,
       help="the number of nodes in the graph")
 flags.DEFINE_integer("batch_size", default=128,
-      help="batch size")
+      help="batch size for training")
+flags.DEFINE_integer("embed_batch_size", default=128,
+      help="the batch size for the embedding steps")
 flags.DEFINE_integer("layers", default=2,
       help="number of layers")
 flags.DEFINE_integer("depth", default=128,
@@ -66,6 +70,8 @@ flags.DEFINE_integer("feedforward", default=128,
 
 flags.DEFINE_bool("train", default=True,
       help="whether to train")
+flags.DEFINE_bool("embed", default=True,
+      help="whether to embed the graph")
 flags.DEFINE_bool("predict", default=True,
       help="whether to predict")
 flags.DEFINE_integer("predict_samples", default=10,
@@ -78,12 +84,14 @@ encoderLayerNames = ['encoder_layer{}'.format(i + 1) for i in range(FLAGS.layers
 
 
 def model_fn(features, labels, mode, params):
-    facts = features["input_ids"]
+    sentences = features["input_ids"]
+    facts = tf.cast(features["input_fact"], tf.int32)
     vocab_size = params['vocab_size'] + 2
+    is_embedding = params['embedding']
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(facts, mode == tf.estimator.ModeKeys.TRAIN)
+    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN, is_embedding)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -96,11 +104,13 @@ def model_fn(features, labels, mode, params):
         return tf.reduce_mean(loss_)
 
     # Calculate the loss
+    loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
+    sparse_loss = tf.zeros(tf.shape(logits)[0])
     sparse_loss = tf.math.square(pickOut_attention * FLAGS.conc)
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / FLAGS.conc
     sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1)
-    loss = loss_function(tf.slice(facts, [0, 1], [-1, -1]), logits) + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss)
+    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) * tf.cast(facts, tf.float32)
+    loss = tf.cond(tf.constant(is_embedding), lambda: loss + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss), lambda: loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
@@ -146,7 +156,8 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
 
     name_to_features = {
         "input_ids": tf.io.FixedLenFeature([sequence_length], tf.int64),
-        "input_len": tf.io.FixedLenFeature([1], tf.int64)
+        "input_len": tf.io.FixedLenFeature([1], tf.int64),
+        "input_fact": tf.io.FixedLenFeature([1], tf.int64)
     }
 
     def _decode_record(record, name_to_features):
@@ -188,8 +199,8 @@ def main(argv=None):
 
     vocab_size, tokenizer = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
 
-    estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir, params={'vocab_size': vocab_size},
-                                       config=config)
+    estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
+                                       params={'vocab_size': vocab_size, 'embedding': False}, config=config)
 
     if FLAGS.train:
         print("***************************************")
@@ -228,13 +239,55 @@ def main(argv=None):
         print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
         print("total: " + str(np.sum(updates)))
 
+
+    if FLAGS.embed:
+        print("***************************************")
+        print("Embedding")
+        print("***************************************")
+
+        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
+                                           params={'vocab_size': vocab_size, 'embedding': True},
+                                           config=config)
+
+        train_input_fn = file_based_input_fn_builder(
+            input_file="facts_only_training",
+            sequence_length=FLAGS.seq_len,
+            batch_size=FLAGS.embed_batch_size,
+            is_training=True,
+            drop_remainder=True)
+
+        trainspec = tf.estimator.TrainSpec(
+            input_fn=train_input_fn,
+            max_steps=FLAGS.embed_steps)
+
+        eval_input_fn = file_based_input_fn_builder(
+            input_file="facts_only_testing",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        evalspec = tf.estimator.EvalSpec(
+            input_fn=eval_input_fn)
+
+        tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
+
+        updates = estimator.get_variable_value("nodeUpdates").astype(int)
+        values = estimator.get_variable_value("nodes")
+
+        for i in range(len(updates)):
+            print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
+
+        print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
+        print("total: " + str(np.sum(updates)))
+
     if FLAGS.predict:
         print("***************************************")
         print("Predicting")
         print("***************************************")
 
         pred_input_fn = file_based_input_fn_builder(
-            input_file="predict",
+            input_file="facts_only_testing",
             sequence_length=FLAGS.seq_len,
             batch_size=1,
             is_training=False,
@@ -258,8 +311,8 @@ def main(argv=None):
             print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            print("pickout attention: " + str(result['pickout_attention'].max(-1)))
-            print("pickout indices: " + str(np.argmax(result['pickout_attention'], -1)))
+            print("pickout attention: " + str(np.sort(result['pickout_attention'])[:, :, -3:]))
+            print("pickout indices: " + str(np.argsort(result['pickout_attention'])[:, :, -3:]))
             print("projection_attention: " + str(result['projection_attention']))
             plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
 
