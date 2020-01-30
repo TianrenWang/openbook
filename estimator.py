@@ -67,6 +67,10 @@ flags.DEFINE_integer("predict_samples", default=10,
       help="the number of samples to predict")
 
 FLAGS = flags.FLAGS
+flags = tf.compat.v1.flags.FLAGS.flag_values_dict()
+for i, key in enumerate(flags.keys()):
+    if i > 18:
+        print(key + ": " + str(flags[key]))
 
 SIGNATURE_NAME = "serving_default"
 encoderLayerNames = ['encoder_layer{}'.format(i + 1) for i in range(FLAGS.layers)]
