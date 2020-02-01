@@ -469,8 +469,7 @@ def TED_generator(vocab_size, FLAGS):
             compressed1 = self.dropout3(compressed1, training=training)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
-            compressed1 = tf.reshape(compressed1, [-1, self.d_model])
-            normed_compressed = tf.math.l2_normalize(compressed1, -1)
+            normed_compressed = tf.math.l2_normalize(tf.reshape(compressed1, [-1, self.d_model]), -1)
             droppedGraph = self.dropout6(self.graphNodes)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
@@ -519,7 +518,7 @@ def TED_generator(vocab_size, FLAGS):
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
             # print("compressed: " + str(compressed1))
             # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-            projection_signal = tf.reshape(compressed1, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
+            projection_signal = normed_compressed * tf.reshape(norm_duplicate, [-1, 1])
             # print("projection_signal: " + str(projection_signal))
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
@@ -532,9 +531,9 @@ def TED_generator(vocab_size, FLAGS):
 
             # Compress the encoded signal into a smaller space
             encodedGraph = self.dropout4(encodedGraph)
-            compressed1 = tf.reshape(compressed1, [-1, FLAGS.sparse_len, self.d_model])
+            normed_compressed = tf.reshape(normed_compressed, [-1, FLAGS.sparse_len, self.d_model])
 
-            compressed2, compress_attention2 = self.compressionLayer2(compressed1, encodedGraph, training, None)
+            compressed2, compress_attention2 = self.compressionLayer2(normed_compressed, encodedGraph, training, None)
             # print("compressed2: " + str(compressed2))
 
             facts = tf.cast(tf.expand_dims(facts, -1), tf.float32)

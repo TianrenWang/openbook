@@ -28,12 +28,12 @@ python3 estimator.py \
   --dropout=0.1 \
   --heads=8 \
   --seq_len=40 \
-  --sparse_len=4 \
+  --sparse_len=3 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
   --conc=3 \
-  --sparse_loss=1e-5 \
+  --sparse_loss=1e-3 \
   --alpha=0.9 \
   --graph_size=512 \
   --batch_size=128 \
