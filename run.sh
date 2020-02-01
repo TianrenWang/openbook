@@ -23,12 +23,12 @@ python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
   --train_steps=100000 \
-  --embed_steps=50000 \
+  --embed_steps=150000 \
   --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \
   --seq_len=40 \
-  --sparse_len=8 \
+  --sparse_len=4 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \

@@ -470,10 +470,6 @@ def TED_generator(vocab_size, FLAGS):
 
             compressed1 = self.dropout3(compressed1, training=training)
 
-            # Later used to activate the expression of the knowledge graph
-            projection_signal = self.projection(compressed1)
-            projection_signal = self.layerNorm1(projection_signal)
-
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             compressed1 = tf.reshape(compressed1, [-1, self.d_model])
             normed_compressed = tf.math.l2_normalize(compressed1, -1)
@@ -524,13 +520,10 @@ def TED_generator(vocab_size, FLAGS):
             positions = tf.concat([positions, tf.reshape(closest_words_ind, [-1, 1])], -1)
             # print("compressed: " + str(compressed1))
             # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-            projection_signal = tf.reshape(projection_signal, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
+            projection_signal = tf.reshape(compressed1, [-1, FLAGS.depth]) * tf.reshape(norm_duplicate, [-1, 1])
             # print("projection_signal: " + str(projection_signal))
 
             encodedGraph = tf.tensor_scatter_nd_add(batched_nodes, positions, projection_signal) # [batch_size, graph_size, FLAGS.d_model]
-            # print("encodedGraph: " + str(encodedGraph))
-            encodedGraph = self.nodeActivation(encodedGraph)
-            encodedGraph = self.layerNorm2(encodedGraph)
 
             '''
             The main reason why it is necessary to be able to pickout the correct nodes from the entire graph is because
