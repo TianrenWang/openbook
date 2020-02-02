@@ -95,7 +95,7 @@ def model_fn(features, labels, mode, params):
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN, is_embedding)
+    logits, encoder_attention_weights, compress_attention, projection_attention = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN, is_embedding)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -108,9 +108,10 @@ def model_fn(features, labels, mode, params):
         return tf.reduce_mean(loss_)
 
     # Calculate the loss
+    projection_attention = tf.nn.softmax(2 - projection_attention)
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
     sparse_loss = tf.zeros(tf.shape(logits)[0])
-    sparse_loss = tf.math.square(pickOut_attention * FLAGS.conc)
+    sparse_loss = tf.math.square(projection_attention * FLAGS.conc)
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / FLAGS.conc
     sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
     sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) * tf.cast(facts, tf.float32)
@@ -124,8 +125,7 @@ def model_fn(features, labels, mode, params):
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
         'sparse_attention': compress_attention,
-        'pickout_attention': pickOut_attention,
-        'projection_attention': tf.nn.softmax(2 - projection_attention),
+        'projection_attention': projection_attention,
         'sparse_loss': sparse_loss
     }
 
@@ -298,8 +298,7 @@ def main(argv=None):
             drop_remainder=True)
 
         results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
-                                                                          'pickout_attention', 'projection_attention',
-                                                                          'sparse_loss'] + encoderLayerNames)
+                                                                          'projection_attention', 'sparse_loss'] + encoderLayerNames)
 
         for i, result in enumerate(results):
             print("------------------------------------")
@@ -311,8 +310,6 @@ def main(argv=None):
             print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            print("pickout attention: " + str(np.sort(result['pickout_attention'])[:, :, -3:]))
-            print("pickout indices: " + str(np.argsort(result['pickout_attention'])[:, :, -3:]))
             print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
             print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
             # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
@@ -334,8 +331,7 @@ def main(argv=None):
             drop_remainder=True)
 
         results = estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
-                                                                          'pickout_attention', 'projection_attention',
-                                                                          'sparse_loss'] + encoderLayerNames)
+                                                                          'projection_attention', 'sparse_loss'] + encoderLayerNames)
 
         for i, result in enumerate(results):
             print("------------------------------------")
@@ -347,8 +343,6 @@ def main(argv=None):
             print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            print("pickout attention: " + str(np.sort(result['pickout_attention'])[:, :, -3:]))
-            print("pickout indices: " + str(np.argsort(result['pickout_attention'])[:, :, -3:]))
             print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
             print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
             # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
