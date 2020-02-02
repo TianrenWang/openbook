@@ -16,24 +16,24 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
     facts_indicator = []
     dir_path = data_path
 
-    def accumulate_samples(filename, facts=False):
+    def accumulate_samples(sample_list, fact_list, filename, facts=False):
 
         data = open(dir_path + filename, "r")
         line = data.readline().capitalize()
 
         while line:
-            samples.append(str.encode(line[:-2]))
-            facts_indicator.append(facts)
+            sample_list.append(str.encode(line[:-2]))
+            fact_list.append(facts)
             line = data.readline()
 
         data.close()
 
-    accumulate_samples("openbook_facts.txt", True)
-    accumulate_samples("AristoTable.txt")
-    accumulate_samples("Annotation.txt")
-    accumulate_samples("scitail.txt")
-    accumulate_samples("quartz.txt")
-    accumulate_samples("sciq.txt")
+    accumulate_samples(samples, facts_indicator, "openbook_facts.txt", True)
+    accumulate_samples(samples, facts_indicator, "AristoTable.txt")
+    accumulate_samples(samples, facts_indicator, "Annotation.txt")
+    accumulate_samples(samples, facts_indicator, "scitail.txt")
+    accumulate_samples(samples, facts_indicator, "quartz.txt")
+    accumulate_samples(samples, facts_indicator, "sciq.txt")
 
     facts_indicator, samples = shuffle(facts_indicator, samples)
 
@@ -91,16 +91,12 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
 
     train_facts = [train_facts[i] for i in range(len(train_facts_indictator)) if train_facts_indictator[i]]
     train_facts_indictator = [i for i in train_facts_indictator if i]
-    print(train_facts[:3])
-    print(train_facts_indictator[:3])
 
     test_facts = samples[-2000:]
     test_facts_indictator = facts_indicator[-2000:]
 
     test_facts = [test_facts[i] for i in range(len(test_facts_indictator)) if test_facts_indictator[i]]
-    print(test_facts[:3])
     test_facts_indictator = [i for i in test_facts_indictator if i]
-    print(test_facts_indictator[:3])
 
     write_tfrecords(train_facts, train_facts_indictator, "facts_only_training")
     write_tfrecords(test_facts, test_facts_indictator, "facts_only_testing")
@@ -108,6 +104,12 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):
     #     print(str(i) + ": " + str(length))
+
+    # This dataset will be used to test how well the connections form between concepts
+    samples = []
+    facts_indicator = []
+    accumulate_samples(samples, facts_indicator, "connection.txt", True)
+    write_tfrecords(samples, facts_indicator, "connections")
 
     return vocab_size, tokenizer
 

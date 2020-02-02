@@ -125,7 +125,7 @@ def model_fn(features, labels, mode, params):
         'prediction': tf.argmax(logits, 2),
         'sparse_attention': compress_attention,
         'pickout_attention': pickOut_attention,
-        'projection_attention': projection_attention,
+        'projection_attention': tf.nn.softmax(2 - projection_attention),
         'sparse_loss': sparse_loss
     }
 
@@ -297,13 +297,9 @@ def main(argv=None):
             is_training=False,
             drop_remainder=True)
 
-        print("Started predicting")
-
         results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
                                                                           'pickout_attention', 'projection_attention',
                                                                           'sparse_loss'] + encoderLayerNames)
-
-        print("Ended predicting")
 
         for i, result in enumerate(results):
             print("------------------------------------")
@@ -317,13 +313,50 @@ def main(argv=None):
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
             print("pickout attention: " + str(np.sort(result['pickout_attention'])[:, :, -3:]))
             print("pickout indices: " + str(np.argsort(result['pickout_attention'])[:, :, -3:]))
-            print("projection_attention: " + str(result['projection_attention']))
-            plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
+            print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
+            print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
+            # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
 
             if i + 1 == FLAGS.predict_samples:
                 # for layerName in encoderLayerNames:
                 #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
+
+        print("***************************************")
+        print("Verifying Connections")
+        print("***************************************")
+
+        connection_input_fn = file_based_input_fn_builder(
+            input_file="connections",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        results = estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+                                                                          'pickout_attention', 'projection_attention',
+                                                                          'sparse_loss'] + encoderLayerNames)
+
+        for i, result in enumerate(results):
+            print("------------------------------------")
+            output_sentence = result['prediction']
+            input_sentence = result['original']
+            sparse_attention = result['sparse_attention']
+            sparse_loss = result['sparse_loss']
+            print("result: " + str(output_sentence))
+            print("sparse loss: " + str(sparse_loss))
+            print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
+            print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
+            print("pickout attention: " + str(np.sort(result['pickout_attention'])[:, :, -3:]))
+            print("pickout indices: " + str(np.argsort(result['pickout_attention'])[:, :, -3:]))
+            print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
+            print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
+            # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
+            #
+            # if i + 1 == FLAGS.predict_samples:
+            #     # for layerName in encoderLayerNames:
+            #     #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
+            #     break
 
         print("Ended showing result")
 

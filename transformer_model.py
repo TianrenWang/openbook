@@ -570,14 +570,8 @@ def TED_generator(vocab_size, FLAGS):
             #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
             # print("pickedOutNodes: " + str(pickedOutNodes))
 
-            # Embed the edge information based off the graph attention
-            # Yet to be implemented, but not necessary for this model
-
-            # Pickout attentions: the graph nodes that were picked for decoding
-            # Projection attention: the graph nodes that were projected onto after the compression
-            # Compressed attention: how the original input was compressed
-            return compressed, compress_attention, compress_attention2, tf.reshape(closest_words_ind,
-                                                                                    [-1, FLAGS.sparse_len])
+            return compressed, compress_attention, compress_attention2, \
+                   tf.reshape(eucli_dist, [-1, FLAGS.sparse_len, FLAGS.graph_size])
 
             # return compressed1, compress_attention, compress_attention, compress_attention
 
