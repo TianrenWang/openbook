@@ -23,7 +23,7 @@ python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
   --train_steps=100000 \
-  --embed_steps=110000 \
+  --embed_steps=150000 \
   --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \
@@ -34,6 +34,7 @@ python3 estimator.py \
   --sparse_thresh=0.0 \
   --conc=3 \
   --sparse_loss=1e-5 \
+  --update_loss=1e-5 \
   --alpha=0.9 \
   --graph_size=512 \
   --batch_size=128 \

@@ -53,6 +53,8 @@ flags.DEFINE_float("conc", default=1.4,
       help="concentration factor multiplier")
 flags.DEFINE_float("sparse_loss", default=0,
       help="sparse loss multiplier")
+flags.DEFINE_float("update_loss", default=0,
+      help="update loss multiplier")
 flags.DEFINE_float("alpha", default=0.98,
       help="exponentially smoothed average constant")
 flags.DEFINE_integer("graph_size", default=512,
@@ -78,10 +80,6 @@ flags.DEFINE_integer("predict_samples", default=10,
       help="the number of samples to predict")
 
 FLAGS = flags.FLAGS
-flags = tf.compat.v1.flags.FLAGS.flag_values_dict()
-for i, key in enumerate(flags.keys()):
-    if i > 18:
-        print(key + ": " + str(flags[key]))
 
 SIGNATURE_NAME = "serving_default"
 encoderLayerNames = ['encoder_layer{}'.format(i + 1) for i in range(FLAGS.layers)]
@@ -108,14 +106,24 @@ def model_fn(features, labels, mode, params):
         return tf.reduce_mean(loss_)
 
     # Calculate the loss
-    projection_attention = tf.nn.softmax(projection_attention)
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
-    sparse_loss = tf.zeros(tf.shape(logits)[0])
-    sparse_loss = tf.math.square(projection_attention * FLAGS.conc)
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / FLAGS.conc
-    sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) * tf.cast(facts, tf.float32)
-    loss = tf.cond(tf.constant(is_embedding), lambda: loss + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss), lambda: loss)
+
+    # Penalizes the model for having projection attention that is indecisive about which nodes to pick
+    projection_attention = tf.nn.softmax(projection_attention)
+    proj_loss = tf.math.square(projection_attention * FLAGS.conc)
+    proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
+    proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
+    proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
+
+    # Penalizes the model for having a graph that does not have well-distributed update
+    graphUpdates = tf.compat.v1.global_variables()[4]
+    graphUpdates = tf.reshape(graphUpdates, [-1])
+    update_loss = tf.math.square(graphUpdates / (tf.reduce_sum(graphUpdates) + 1) * FLAGS.graph_size)
+    update_loss = tf.reduce_sum(update_loss, axis=-1) / FLAGS.graph_size
+    update_loss = tf.math.abs(tf.math.log(tf.math.sqrt(update_loss)))
+    update_loss = FLAGS.update_loss * tf.reduce_mean(update_loss)
+
+    loss = tf.cond(tf.constant(is_embedding), lambda: FLAGS.sparse_loss * tf.reduce_mean(proj_loss), lambda: loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
@@ -126,8 +134,10 @@ def model_fn(features, labels, mode, params):
         'prediction': tf.argmax(logits, 2),
         'sparse_attention': compress_attention,
         'projection_attention': projection_attention,
-        'sparse_loss': sparse_loss
+        'sparse_loss': proj_loss
     }
+
+    graphNodes = tf.compat.v1.global_variables()[2]
 
     for i, weight in enumerate(encoder_attention_weights):
         predictions["encoder_layer" + str(i + 1)] = weight
@@ -147,6 +157,8 @@ def model_fn(features, labels, mode, params):
         update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step)
+            if is_embedding:
+                train_op = optimizer.minimize(loss, global_step, var_list=[graphNodes])
     else:
         train_op = None
 
@@ -197,6 +209,11 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
 
 
 def main(argv=None):
+    flags = tf.compat.v1.flags.FLAGS.flag_values_dict()
+    for i, key in enumerate(flags.keys()):
+        if i > 18:
+            print(key + ": " + str(flags[key]))
+
     mirrored_strategy = tf.distribute.MirroredStrategy()
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
