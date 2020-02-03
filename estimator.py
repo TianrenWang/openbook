@@ -108,7 +108,7 @@ def model_fn(features, labels, mode, params):
         return tf.reduce_mean(loss_)
 
     # Calculate the loss
-    projection_attention = tf.nn.softmax(2 - projection_attention)
+    projection_attention = tf.nn.softmax(projection_attention)
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
     sparse_loss = tf.zeros(tf.shape(logits)[0])
     sparse_loss = tf.math.square(projection_attention * FLAGS.conc)

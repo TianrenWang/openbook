@@ -473,20 +473,12 @@ def TED_generator(vocab_size, FLAGS):
             normed_compressed = tf.math.l2_normalize(compressed1, -1)
             droppedGraph = self.dropout6(self.graphNodes)
 
-            # Find the nodes in the graph that are the closest to the encoded signal and update them
-            p1 = tf.matmul(
-                tf.expand_dims(tf.reduce_sum(tf.square(normed_compressed), 1), 1),
-                tf.ones(shape=(1, FLAGS.graph_size))
-            )
-            p2 = tf.transpose(tf.matmul(
-                tf.reshape(tf.reduce_sum(tf.square(droppedGraph), 1), shape=[-1, 1]),
-                tf.ones(shape=(FLAGS.sparse_len * batch_size, 1)),
-                transpose_b=True
-            ))
+            normed_graph = tf.keras.backend.l2_normalize(droppedGraph, -1)
 
-            eucli_dist = tf.sqrt(tf.add(p1, p2) - 2 * tf.matmul(normed_compressed, droppedGraph, transpose_b=True))
+            cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
+                                          tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
 
-            closest_words_ind = tf.cast(tf.argmin(eucli_dist, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
+            closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
             tiled_facts = tf.reshape(tf.tile(facts, [1, FLAGS.sparse_len]), tf.shape(closest_words_ind))
             closest_words_ind *= tiled_facts
 
@@ -560,7 +552,7 @@ def TED_generator(vocab_size, FLAGS):
             #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
             # print("pickedOutNodes: " + str(pickedOutNodes))
 
-            return compressed1, compress_attention, tf.reshape(eucli_dist, [-1, FLAGS.sparse_len, FLAGS.graph_size])
+            return compressed1, compress_attention, tf.reshape(cosine_similarity, [-1, FLAGS.sparse_len, FLAGS.graph_size])
 
             # return compressed1, compress_attention, compress_attention, compress_attention
 
