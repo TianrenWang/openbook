@@ -36,6 +36,7 @@ python3 estimator.py \
   --sparse_loss=1e-5 \
   --update_loss=1e-5 \
   --alpha=0.9 \
+  --embed_rate=1e-3 \
   --graph_size=512 \
   --batch_size=128 \
   --embed_batch_size=32 \

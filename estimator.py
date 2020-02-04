@@ -57,6 +57,8 @@ flags.DEFINE_float("update_loss", default=0,
       help="update loss multiplier")
 flags.DEFINE_float("alpha", default=0.98,
       help="exponentially smoothed average constant")
+flags.DEFINE_float("embed_rate", default=1e-3,
+      help="the learning rate for embedding graph nodes")
 flags.DEFINE_integer("graph_size", default=512,
       help="the number of nodes in the graph")
 flags.DEFINE_integer("batch_size", default=128,
@@ -149,9 +151,12 @@ def model_fn(features, labels, mode, params):
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions, export_outputs=export_outputs)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
+        learning_rate = 1e-5
+        if is_embedding:
+            learning_rate = FLAGS.embed_rate
         global_step = tf.compat.v1.train.get_or_create_global_step()
 
-        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-5, beta2=0.98, epsilon=1e-9)
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate, beta2=0.98, epsilon=1e-9)
 
         # Batch norm requires update ops to be added as a dependency to the train_op
         update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
