@@ -109,11 +109,13 @@ def model_fn(features, labels, mode, params):
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
 
     # Penalizes the model for having projection attention that is indecisive about which nodes to pick
-    projection_attention = tf.nn.softmax(projection_attention)
-    proj_loss = tf.math.square(projection_attention * FLAGS.conc)
-    proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
-    proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
-    proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
+    projection_targets = tf.math.argmax(projection_attention, -1)
+    proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
+    # projection_attention = tf.nn.softmax(projection_attention)
+    # proj_loss = tf.math.square(projection_attention * FLAGS.conc)
+    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
+    # proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
+    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
 
     # Penalizes the model for having a graph that does not have well-distributed update
     graphUpdates = tf.compat.v1.global_variables()[4]
@@ -368,6 +370,46 @@ def main(argv=None):
             #     # for layerName in encoderLayerNames:
             #     #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
             #     break
+
+        print("***************************************")
+        print("Visualize Graph Distribution")
+        print("***************************************")
+
+        all_indices = []
+
+        input_fn = file_based_input_fn_builder(
+            input_file="facts_only_training",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        results = estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
+
+        for result in results:
+            indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [3]))
+            all_indices += indices
+
+        input_fn = file_based_input_fn_builder(
+            input_file="facts_only_testing",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        results = estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
+
+        for result in results:
+            indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [3]))
+            all_indices += indices
+
+        indices, values = np.unique(all_indices, return_counts=True)
+
+        for index, count in zip(indices, values):
+            print(str(index) + ": Updates: " + str(count))
+
+        print("non-zeros: " + str(len(indices)))
+        print("total: " + str(np.sum(values)))
 
         print("Ended showing result")
 

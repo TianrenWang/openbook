@@ -471,7 +471,7 @@ def TED_generator(vocab_size, FLAGS):
             # Find the nodes in the graph that are the closest to the encoded signal and update them
             compressed1 = tf.reshape(compressed1, [-1, self.d_model])
             normed_compressed = tf.math.l2_normalize(compressed1, -1)
-            droppedGraph = self.dropout6(self.graphNodes)
+            droppedGraph = self.dropout6(self.graphNodes, training=training)
 
             normed_graph = tf.keras.backend.l2_normalize(droppedGraph, -1)
 
@@ -485,15 +485,15 @@ def TED_generator(vocab_size, FLAGS):
             # This part is for training, update the graph node embedding
             if training and embedding:
                 print("**************Updating Graph Nodes*********************")
-                with tf.device('/cpu:0'):
-                    ___, idx, count = tf.unique_with_counts(closest_words_ind)
-                counts = tf.gather(count, idx)
-                counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
-                closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
-                normed_compressed = normed_compressed * (1 - FLAGS.alpha) / counts
-                closest_words = tf.tensor_scatter_nd_add(closest_words, tf.reshape(idx, [-1, 1]), normed_compressed)
-                closest_words = tf.math.l2_normalize(closest_words, -1)
-                tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
+                # with tf.device('/cpu:0'):
+                #     ___, idx, count = tf.unique_with_counts(closest_words_ind)
+                # counts = tf.gather(count, idx)
+                # counts = tf.reshape(tf.cast(counts, tf.float32), [-1, 1])
+                # closest_words = tf.gather(self.graphNodes, closest_words_ind) * FLAGS.alpha
+                # normed_compressed = normed_compressed * (1 - FLAGS.alpha) / counts
+                # closest_words = tf.tensor_scatter_nd_add(closest_words, tf.reshape(idx, [-1, 1]), normed_compressed)
+                # closest_words = tf.math.l2_normalize(closest_words, -1)
+                # tf.compat.v1.scatter_nd_update(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), closest_words)
 
                 # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
                 # tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), normed_compressed)

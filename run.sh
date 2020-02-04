@@ -38,7 +38,7 @@ python3 estimator.py \
   --alpha=0.9 \
   --graph_size=512 \
   --batch_size=128 \
-  --embed_batch_size=32 \
+  --embed_batch_size=128 \
   --layers=4 \
   --depth=256 \
   --feedforward=512 \
