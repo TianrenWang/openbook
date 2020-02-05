@@ -439,7 +439,7 @@ def TED_generator(vocab_size, FLAGS):
             self.dropout3 = tf.keras.layers.Dropout(rate)
             self.dropout4 = tf.keras.layers.Dropout(rate * 5)
             self.dropout5 = tf.keras.layers.Dropout(rate)
-            self.dropout6 = tf.keras.layers.Dropout(rate)
+            self.dropout6 = tf.keras.layers.Dropout(rate * 5)
             self.compressor1 = tf.compat.v1.get_variable("compressor1", [seq_len, d_model])
             self.compressionLayer1 = CompressionLayer(d_model, num_heads, dff, rate)
             self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)

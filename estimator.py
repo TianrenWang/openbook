@@ -225,33 +225,56 @@ def main(argv=None):
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
                                        params={'vocab_size': vocab_size, 'embedding': False}, config=config)
 
+    embed_estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
+                                       params={'vocab_size': vocab_size, 'embedding': True}, config=config)
+
+    language_train_input_fn = file_based_input_fn_builder(
+        input_file="training",
+        sequence_length=FLAGS.seq_len,
+        batch_size=FLAGS.batch_size,
+        is_training=True,
+        drop_remainder=True)
+
+    language_eval_input_fn = file_based_input_fn_builder(
+        input_file="testing",
+        sequence_length=FLAGS.seq_len,
+        batch_size=1,
+        is_training=False,
+        drop_remainder=True)
+
+    facts_train_input_fn = file_based_input_fn_builder(
+        input_file="facts_only_training",
+        sequence_length=FLAGS.seq_len,
+        batch_size=FLAGS.embed_batch_size,
+        is_training=True,
+        drop_remainder=True)
+
+    facts_eval_input_fn = file_based_input_fn_builder(
+        input_file="facts_only_testing",
+        sequence_length=FLAGS.seq_len,
+        batch_size=1,
+        is_training=False,
+        drop_remainder=True)
+
     if FLAGS.train:
         print("***************************************")
         print("Training")
         print("***************************************")
 
-        train_input_fn = file_based_input_fn_builder(
-            input_file="training",
-            sequence_length=FLAGS.seq_len,
-            batch_size=FLAGS.batch_size,
-            is_training=True,
-            drop_remainder=True)
-
         trainspec = tf.estimator.TrainSpec(
-            input_fn=train_input_fn,
+            input_fn=language_train_input_fn,
             max_steps=FLAGS.train_steps)
 
-        eval_input_fn = file_based_input_fn_builder(
-            input_file="testing",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
         evalspec = tf.estimator.EvalSpec(
-            input_fn=eval_input_fn)
+            input_fn=language_eval_input_fn)
 
         tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
+
+        print("***************************************")
+        print("Facts only eval")
+        print("***************************************")
+
+        estimator.evaluate(facts_eval_input_fn, name="Facts only eval")
 
         updates = estimator.get_variable_value("nodeUpdates").astype(int)
         values = estimator.get_variable_value("nodes")
@@ -268,35 +291,23 @@ def main(argv=None):
         print("Embedding")
         print("***************************************")
 
-        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
-                                           params={'vocab_size': vocab_size, 'embedding': True},
-                                           config=config)
-
-        train_input_fn = file_based_input_fn_builder(
-            input_file="facts_only_training",
-            sequence_length=FLAGS.seq_len,
-            batch_size=FLAGS.embed_batch_size,
-            is_training=True,
-            drop_remainder=True)
-
         trainspec = tf.estimator.TrainSpec(
-            input_fn=train_input_fn,
+            input_fn=facts_train_input_fn,
             max_steps=FLAGS.embed_steps)
 
-        eval_input_fn = file_based_input_fn_builder(
-            input_file="facts_only_testing",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
         evalspec = tf.estimator.EvalSpec(
-            input_fn=eval_input_fn)
+            input_fn=facts_eval_input_fn)
 
-        tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
+        tf.estimator.train_and_evaluate(embed_estimator, trainspec, evalspec)
 
-        updates = estimator.get_variable_value("nodeUpdates").astype(int)
-        values = estimator.get_variable_value("nodes")
+        print("***************************************")
+        print("Facts only eval")
+        print("***************************************")
+
+        estimator.evaluate(facts_eval_input_fn, name="Facts only eval")
+
+        updates = embed_estimator.get_variable_value("nodeUpdates").astype(int)
+        values = embed_estimator.get_variable_value("nodes")
 
         for i in range(len(updates)):
             print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
@@ -309,14 +320,7 @@ def main(argv=None):
         print("Predicting")
         print("***************************************")
 
-        pred_input_fn = file_based_input_fn_builder(
-            input_file="facts_only_testing",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
-        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+        results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
                                                                           'projection_attention', 'sparse_loss'] + encoderLayerNames)
 
         for i, result in enumerate(results):
@@ -349,7 +353,7 @@ def main(argv=None):
             is_training=False,
             drop_remainder=True)
 
-        results = estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+        results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
                                                                           'projection_attention', 'sparse_loss'] + encoderLayerNames)
 
         for i, result in enumerate(results):
@@ -384,20 +388,13 @@ def main(argv=None):
             is_training=False,
             drop_remainder=True)
 
-        results = estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
+        results = embed_estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
 
         for result in results:
             indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [3]))
             all_indices += indices
 
-        input_fn = file_based_input_fn_builder(
-            input_file="facts_only_testing",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
-        results = estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
+        results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['projection_attention'])
 
         for result in results:
             indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [3]))
