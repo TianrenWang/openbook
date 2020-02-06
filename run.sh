@@ -46,5 +46,6 @@ python3 estimator.py \
   --embed=True \
   --predict=True \
   --predict_samples=10 \
+  --description="Put experiment description here" \
 
   $@

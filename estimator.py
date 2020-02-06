@@ -78,6 +78,8 @@ flags.DEFINE_bool("predict", default=True,
       help="whether to predict")
 flags.DEFINE_integer("predict_samples", default=10,
       help="the number of samples to predict")
+flags.DEFINE_string("description", default="",
+      help="description of experiment")
 
 FLAGS = flags.FLAGS
 
@@ -109,13 +111,13 @@ def model_fn(features, labels, mode, params):
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
 
     # Penalizes the model for having projection attention that is indecisive about which nodes to pick
-    projection_targets = tf.math.argmax(projection_attention, -1)
-    proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
-    # projection_attention = tf.nn.softmax(projection_attention)
-    # proj_loss = tf.math.square(projection_attention * FLAGS.conc)
-    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
-    # proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
-    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
+    # projection_targets = tf.math.argmax(projection_attention, -1)
+    # proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
+    projection_attention = tf.nn.softmax(projection_attention)
+    proj_loss = tf.math.square(projection_attention * FLAGS.conc)
+    proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
+    proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
+    proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
 
     # Penalizes the model for having a graph that does not have well-distributed update
     graphUpdates = tf.compat.v1.global_variables()[4]
@@ -159,8 +161,8 @@ def model_fn(features, labels, mode, params):
         update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step)
-            if is_embedding:
-                train_op = optimizer.minimize(loss, global_step, var_list=[graphNodes])
+            # if is_embedding:
+            #     train_op = optimizer.minimize(loss, global_step, var_list=[graphNodes])
     else:
         train_op = None
 
