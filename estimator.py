@@ -111,23 +111,24 @@ def model_fn(features, labels, mode, params):
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
 
     # Penalizes the model for having projection attention that is indecisive about which nodes to pick
-    # projection_targets = tf.math.argmax(projection_attention, -1)
-    # proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
-    projection_attention = tf.nn.softmax(projection_attention)
-    proj_loss = tf.math.square(projection_attention * FLAGS.conc)
-    proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
-    proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
-    proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
+    projection_targets = tf.math.argmax(projection_attention, -1)
+    proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
+    # projection_attention = tf.nn.softmax(projection_attention)
+    # proj_loss = tf.math.square(projection_attention * FLAGS.conc)
+    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
+    # proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
+    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
 
     # Penalizes the model for having a graph that does not have well-distributed update
-    graphUpdates = tf.compat.v1.global_variables()[4]
-    graphUpdates = tf.reshape(graphUpdates, [-1])
-    update_loss = tf.math.square(graphUpdates / (tf.reduce_sum(graphUpdates) + 1) * FLAGS.graph_size)
-    update_loss = tf.reduce_sum(update_loss, axis=-1) / FLAGS.graph_size
-    update_loss = tf.math.abs(tf.math.log(tf.math.sqrt(update_loss)))
-    update_loss = FLAGS.update_loss * tf.reduce_mean(update_loss)
+    graph_loss = tf.math.softmax(tf.reshape(projection_attention, [-1, FLAGS.graph_size]), -1)
+    graph_loss = tf.math.softmax(tf.reduce_sum(graph_loss, 0))
+    concentration = FLAGS.embed_batch_size * FLAGS.sparse_len if FLAGS.embed_batch_size * FLAGS.sparse_len <= FLAGS.graph_size else FLAGS.graph_size
+    graph_loss = tf.math.square(graph_loss * concentration)
+    graph_loss = tf.reduce_sum(graph_loss) / concentration
+    graph_loss = tf.math.abs(tf.math.log(tf.math.sqrt(graph_loss)))
+    graph_loss = FLAGS.update_loss * graph_loss
 
-    loss = tf.cond(tf.constant(is_embedding), lambda: FLAGS.sparse_loss * tf.reduce_mean(proj_loss), lambda: loss)
+    loss = tf.cond(tf.constant(is_embedding), lambda: loss + FLAGS.sparse_loss * tf.reduce_mean(proj_loss) + graph_loss, lambda: loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
@@ -393,13 +394,13 @@ def main(argv=None):
         results = embed_estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
 
         for result in results:
-            indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [3]))
+            indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [FLAGS.sparse_len]))
             all_indices += indices
 
         results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['projection_attention'])
 
         for result in results:
-            indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [3]))
+            indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [FLAGS.sparse_len]))
             all_indices += indices
 
         indices, values = np.unique(all_indices, return_counts=True)

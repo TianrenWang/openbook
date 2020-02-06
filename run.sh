@@ -28,7 +28,7 @@ python3 estimator.py \
   --dropout=0.1 \
   --heads=8 \
   --seq_len=40 \
-  --sparse_len=3 \
+  --sparse_len=5 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
