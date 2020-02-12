@@ -22,8 +22,9 @@ TPU_NAME=
 python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
+  --graph_dir=graph_model/ \
   --train_steps=100000 \
-  --embed_steps=150000 \
+  --embed_steps=50000 \
   --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \

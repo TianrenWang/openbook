@@ -435,23 +435,23 @@ def TED_generator(vocab_size, FLAGS):
 
             self.d_model = d_model
             self.dropout1 = tf.keras.layers.Dropout(rate)
-            self.dropout2 = tf.keras.layers.Dropout(rate)
-            self.dropout3 = tf.keras.layers.Dropout(rate)
-            self.dropout4 = tf.keras.layers.Dropout(rate * 5)
-            self.dropout5 = tf.keras.layers.Dropout(rate)
-            self.dropout6 = tf.keras.layers.Dropout(rate * 5)
+            # self.dropout2 = tf.keras.layers.Dropout(rate)
+            # self.dropout3 = tf.keras.layers.Dropout(rate)
+            # self.dropout4 = tf.keras.layers.Dropout(rate * 5)
+            # self.dropout5 = tf.keras.layers.Dropout(rate)
+            # self.dropout6 = tf.keras.layers.Dropout(rate * 5)
             self.compressor1 = tf.compat.v1.get_variable("compressor1", [seq_len, d_model])
             self.compressionLayer1 = CompressionLayer(d_model, num_heads, dff, rate)
-            self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)
-            graphNodeInit = tf.math.l2_normalize(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32), axis=-1)
-            self.graphNodes = tf.compat.v1.get_variable("nodes", initializer=graphNodeInit)
-            self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
-            self.nodeUpdates = tf.Variable(tf.zeros([FLAGS.graph_size, 1]), name='nodeUpdates', trainable=False)
-            self.projection = tf.keras.layers.Dense(d_model, activation='relu')
-            self.nodeActivation = tf.keras.layers.Dense(d_model, activation='relu')
-            self.pickOut = tf.keras.layers.Dense(1)
-            self.layerNorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-            self.layerNorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+            # self.compressionLayer2 = CompressionLayer(d_model, num_heads, dff, rate)
+            # graphNodeInit = tf.math.l2_normalize(tf.constant(np.random.randn(FLAGS.graph_size, d_model), tf.float32), axis=-1)
+            # self.graphNodes = tf.compat.v1.get_variable("nodes", initializer=graphNodeInit)
+            # self.graphEdges = tf.compat.v1.get_variable("edges", [FLAGS.graph_size, FLAGS.graph_size], trainable=False)
+            # self.nodeUpdates = tf.Variable(tf.zeros([FLAGS.graph_size, 1]), name='nodeUpdates', trainable=False)
+            # self.projection = tf.keras.layers.Dense(d_model, activation='relu')
+            # self.nodeActivation = tf.keras.layers.Dense(d_model, activation='relu')
+            # self.pickOut = tf.keras.layers.Dense(1)
+            # self.layerNorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+            # self.layerNorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
         @tf.function
         def call(self, x, facts, training, embedding, mask):
@@ -463,28 +463,28 @@ def TED_generator(vocab_size, FLAGS):
             # Compress the encoded signal into a smaller space
             compressor1 = tf.expand_dims(tf.math.sqrt(tf.cast(self.d_model, tf.float32)) * self.compressor1, 0)
             compressor1 = tf.tile(compressor1, [batch_size, 1, 1])
-            compressor1 = self.dropout2(compressor1, training=training)
+            # compressor1 = self.dropout2(compressor1, training=training)
             compressed1, compress_attention = self.compressionLayer1(compressor1, x, training, mask)
 
-            compressed1 = self.dropout3(compressed1, training=training)
+            # compressed1 = self.dropout3(compressed1, training=training)
 
             # Find the nodes in the graph that are the closest to the encoded signal and update them
-            compressed1 = tf.reshape(compressed1, [-1, self.d_model])
-            normed_compressed = tf.math.l2_normalize(compressed1, -1)
-            droppedGraph = self.dropout6(self.graphNodes, training=training)
-
-            normed_graph = tf.keras.backend.l2_normalize(droppedGraph, -1)
-
-            cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
-                                          tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
-
-            closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
-            tiled_facts = tf.reshape(tf.tile(facts, [1, FLAGS.sparse_len]), tf.shape(closest_words_ind))
-            closest_words_ind *= tiled_facts
+            # compressed1 = tf.reshape(compressed1, [-1, self.d_model])
+            # normed_compressed = tf.math.l2_normalize(compressed1, -1)
+            # droppedGraph = self.dropout6(self.graphNodes, training=training)
+            #
+            # normed_graph = tf.keras.backend.l2_normalize(droppedGraph, -1)
+            #
+            # cosine_similarity = tf.matmul(tf.reshape(normed_compressed, [-1, self.d_model]),
+            #                               tf.keras.backend.permute_dimensions(normed_graph, (1, 0)))
+            #
+            # closest_words_ind = tf.cast(tf.argmax(cosine_similarity, -1), tf.int32)  # shape [batch_size * sparse_len], type int64
+            # tiled_facts = tf.reshape(tf.tile(facts, [1, FLAGS.sparse_len]), tf.shape(closest_words_ind))
+            # closest_words_ind *= tiled_facts
 
             # This part is for training, update the graph node embedding
-            if training and embedding:
-                print("**************Updating Graph Nodes*********************")
+            # if training and embedding:
+            #     print("**************Updating Graph Nodes*********************")
                 # with tf.device('/cpu:0'):
                 #     ___, idx, count = tf.unique_with_counts(closest_words_ind)
                 # counts = tf.gather(count, idx)
@@ -497,7 +497,7 @@ def TED_generator(vocab_size, FLAGS):
 
                 # tf.compat.v1.scatter_nd_update doesn't accumulate the duplicate updates, so a separate add step is needed
                 # tf.compat.v1.scatter_nd_add(self.graphNodes, tf.reshape(closest_words_ind, [-1, 1]), normed_compressed)
-                tf.compat.v1.scatter_nd_add(self.nodeUpdates, tf.reshape(closest_words_ind, [-1, 1]), tf.ones([tf.shape(normed_compressed)[0], 1]))
+                # tf.compat.v1.scatter_nd_add(self.nodeUpdates, tf.reshape(closest_words_ind, [-1, 1]), tf.ones([tf.shape(normed_compressed)[0], 1]))
 
             # # Project signal to the same nodes for added expressiveness
             # closest_words_ind_batched = tf.reshape(closest_words_ind, [-1, FLAGS.sparse_len])  # Need to turn it into [batch, graph_len] so that map_fn can work on each sample
@@ -527,7 +527,7 @@ def TED_generator(vocab_size, FLAGS):
             #
             # # Compress the encoded signal into a smaller space
             # encodedGraph = self.dropout4(encodedGraph)
-            compressed1 = tf.reshape(compressed1, [-1, FLAGS.sparse_len, self.d_model])
+            # compressed1 = tf.reshape(compressed1, [-1, FLAGS.sparse_len, self.d_model])
             #
             # compressed2, compress_attention2 = self.compressionLayer2(compressed1, encodedGraph, training, None)
             # # print("compressed2: " + str(compressed2))
@@ -552,9 +552,9 @@ def TED_generator(vocab_size, FLAGS):
             #                             [-1, FLAGS.sparse_len, FLAGS.depth])  # [batch, sparse_len, depth]
             # print("pickedOutNodes: " + str(pickedOutNodes))
 
-            return compressed1, compress_attention, tf.reshape(cosine_similarity, [-1, FLAGS.sparse_len, FLAGS.graph_size])
+            # return compressed1, compress_attention, tf.reshape(cosine_similarity, [-1, FLAGS.sparse_len, FLAGS.graph_size])
 
-            # return compressed1, compress_attention, compress_attention, compress_attention
+            return compressed1, compress_attention, compress_attention
 
 
     class Decoder(tf.keras.layers.Layer):
@@ -648,7 +648,7 @@ def TED_generator(vocab_size, FLAGS):
 
             final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
-            return final_output, encoder_attention_weights, compress_attention, projection_attention
+            return final_output, encoder_attention_weights, compress_attention, sparse_out
 
     def model(sentences, facts, is_training, is_embedding):
         predicted = tf.slice(sentences, [0, 0], [-1, sentences.get_shape()[1] - 1])
