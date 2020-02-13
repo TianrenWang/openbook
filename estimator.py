@@ -219,6 +219,17 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
     return input_fn
 
 
+def kmeans_input_fn_generator(training, tensors):
+    def kmeans_input_fn():
+        d = tf.data.Dataset.from_tensors(tensors)
+        if training:
+            d = d.shuffle(buffer_size=1024)
+            d = d.repeat()
+        return d
+
+    return kmeans_input_fn
+
+
 def main(argv=None):
     flags = tf.compat.v1.flags.FLAGS.flag_values_dict()
     for i, key in enumerate(flags.keys()):
@@ -353,22 +364,14 @@ def main(argv=None):
             concepts = list(result['sparse_out'])
             all_predictions += concepts
 
-        def kmeans_input_fn_generator(training):
-            def kmeans_input_fn():
-                d = tf.data.Dataset.from_tensors(np.array(all_predictions))
-                if training:
-                    d = d.shuffle(buffer_size=1024)
-                    d = d.repeat()
-                return d
-            return kmeans_input_fn
+        concepts = np.array(all_predictions)
 
         # train
-        # previous_centers = None
-        cluster_estimator.train(kmeans_input_fn_generator(True), max_steps=FLAGS.embed_steps)
+        cluster_estimator.train(kmeans_input_fn_generator(True, concepts), max_steps=FLAGS.embed_steps)
 
         # embed the edges
         edges = np.zeros([FLAGS.graph_size, FLAGS.graph_size])
-        cluster_indices = list(cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False)))
+        cluster_indices = list(cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts)))
         previous_index = -1
         for i, point in enumerate(np.array(all_predictions)):
             cluster_index = cluster_indices[i]
@@ -411,39 +414,50 @@ def main(argv=None):
                 #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
 
-        # print("***************************************")
-        # print("Verifying Connections")
-        # print("***************************************")
-        #
-        # connection_input_fn = file_based_input_fn_builder(
-        #     input_file="connections",
-        #     sequence_length=FLAGS.seq_len,
-        #     batch_size=1,
-        #     is_training=False,
-        #     drop_remainder=True)
-        #
-        # results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
-        #                                                                   'sparse_out'] + encoderLayerNames)
-        #
-        # for i, result in enumerate(results):
-        #     print("------------------------------------")
-        #     output_sentence = result['prediction']
-        #     input_sentence = result['original']
-        #     sparse_attention = result['sparse_attention']
-        #     sparse_out = result['sparse_out']
-        #     # sparse_loss = result['sparse_loss']
-        #     print("result: " + str(output_sentence))
-        #     # print("sparse loss: " + str(sparse_loss))
-        #     print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
-        #     print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            # print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
-            # print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
-            # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
-            #
-            # if i + 1 == FLAGS.predict_samples:
-            #     # for layerName in encoderLayerNames:
-            #     #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
-            #     break
+        print("***************************************")
+        print("Verifying Connections")
+        print("***************************************")
+
+        connection_input_fn = file_based_input_fn_builder(
+            input_file="connections",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+                                                                          'sparse_out'] + encoderLayerNames)
+
+        all_predictions = []
+        output_sentences = []
+        input_sentences = []
+        sparse_attentions = []
+
+        for result in results:
+            concepts = list(result['sparse_out'])
+            all_predictions += concepts
+            output_sentences.append(result['prediction'])
+            input_sentences.append(result['original'])
+            sparse_attentions.append(result['sparse_attention'])
+
+        concepts = np.array(all_predictions)
+        print("concept shape: " + str(concepts.shape))
+        clustered_indices = cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts))
+        print("clustered_indices: " + str(clustered_indices))
+        clustered_indices = np.reshape(list(clustered_indices), [-1, FLAGS.sparse_len])
+
+        for i in range(len(output_sentences)):
+            print("------------------------------------")
+            print("result: " + str(output_sentences[i]))
+            print("decoded: " + str(tokenizer.decode([j for j in output_sentences[i] if j < tokenizer.vocab_size])))
+            print("original: " + str(tokenizer.decode([j for j in input_sentences[i] if j < tokenizer.vocab_size])))
+            print("cluster indices: " + str(clustered_indices[i]))
+            plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
+
+            if i + 1 == FLAGS.predict_samples:
+                # for layerName in encoderLayerNames:
+                #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
+                break
 
         # print("***************************************")
         # print("Visualize Graph Distribution")
