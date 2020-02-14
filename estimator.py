@@ -81,7 +81,7 @@ def model_fn(features, labels, mode, params):
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, encoder_out = network(sentences, mode == tf.estimator.ModeKeys.TRAIN)
+    logits, encoder_attention_weights, encoder_out, embedder_out = network(sentences, mode == tf.estimator.ModeKeys.TRAIN)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -103,7 +103,8 @@ def model_fn(features, labels, mode, params):
     predictions = {
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
-        'encoder_out': encoder_out
+        'encoder_out': encoder_out,
+        'embedder_out': embedder_out
     }
 
     for i, weight in enumerate(encoder_attention_weights):

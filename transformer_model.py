@@ -370,6 +370,7 @@ def TED_generator(vocab_size, FLAGS):
 
             # adding embedding and position encoding.
             x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
+            embedder_out = x
             x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
             x += self.pos_encoding[:, :seq_len, :]
 
@@ -379,7 +380,7 @@ def TED_generator(vocab_size, FLAGS):
                 x, encoder_attention_weight = self.enc_layers[i](x, training, mask)
                 encoder_attention_weights.append(encoder_attention_weight)
 
-            return x, encoder_attention_weights  # (batch_size, input_seq_len, d_model)
+            return x, encoder_attention_weights, embedder_out  # (batch_size, input_seq_len, d_model)
 
 
     class Decoder(tf.keras.layers.Layer):
@@ -458,13 +459,13 @@ def TED_generator(vocab_size, FLAGS):
             self.final_layer = tf.keras.layers.Dense(vocab_size)
 
         def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask):
-            enc_output, encoder_attention_weights = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
+            enc_output, encoder_attention_weights, embedder_out = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
             dec_output, _ = self.decoder(tar, enc_output, training, look_ahead_mask, enc_padding_mask)
 
             final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
-            return final_output, encoder_attention_weights, enc_output
+            return final_output, encoder_attention_weights, enc_output, embedder_out
 
     def model(sentences, is_training):
         predicted = tf.slice(sentences, [0, 0], [-1, sentences.get_shape()[1] - 1])

@@ -35,7 +35,7 @@ python3 estimator.py \
   --depth=256 \
   --feedforward=512 \
   --train=True \
-  --embed=False \
+  --embed=True \
   --predict=True \
   --predict_samples=10 \
   --description="Put experiment description here" \
