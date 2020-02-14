@@ -29,6 +29,8 @@ flags.DEFINE_string("data_dir", default="data/",
       help="data directory")
 flags.DEFINE_string("model_dir", default="model/",
       help="directory of model")
+flags.DEFINE_string("graph_dir", default="graph_model/",
+      help="directory of graph")
 flags.DEFINE_integer("train_steps", default=100000,
       help="number of training steps")
 flags.DEFINE_integer("embed_steps", default=50000,
@@ -53,6 +55,8 @@ flags.DEFINE_float("conc", default=1.4,
       help="concentration factor multiplier")
 flags.DEFINE_float("sparse_loss", default=0,
       help="sparse loss multiplier")
+flags.DEFINE_float("update_loss", default=0,
+      help="update loss multiplier")
 flags.DEFINE_float("alpha", default=0.98,
       help="exponentially smoothed average constant")
 flags.DEFINE_integer("graph_size", default=512,
@@ -76,6 +80,8 @@ flags.DEFINE_bool("predict", default=True,
       help="whether to predict")
 flags.DEFINE_integer("predict_samples", default=10,
       help="the number of samples to predict")
+flags.DEFINE_string("description", default="",
+      help="description of experiment")
 
 FLAGS = flags.FLAGS
 
@@ -91,7 +97,7 @@ def model_fn(features, labels, mode, params):
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, compress_attention, pickOut_attention, projection_attention = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN, is_embedding)
+    logits, encoder_attention_weights, compress_attention, sparse_out = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN, is_embedding)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -105,12 +111,30 @@ def model_fn(features, labels, mode, params):
 
     # Calculate the loss
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
-    sparse_loss = tf.zeros(tf.shape(logits)[0])
-    sparse_loss = tf.math.square(pickOut_attention * FLAGS.conc)
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) / FLAGS.conc
-    sparse_loss = tf.math.abs(tf.math.log(tf.math.sqrt(sparse_loss)))
-    sparse_loss = tf.reduce_sum(sparse_loss, axis=-1) * tf.cast(facts, tf.float32)
-    loss = tf.cond(tf.constant(is_embedding), lambda: loss + FLAGS.sparse_loss * tf.reduce_mean(sparse_loss), lambda: loss)
+
+    # Penalizes the model for having projection attention that is indecisive about which nodes to pick
+
+    # This one uses cross entropy to impart sparse loss
+    # projection_targets = tf.math.argmax(projection_attention, -1)
+    # proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
+
+    # This one uses pseudo squared mean error as sparse loss
+    # projection_attention = tf.nn.softmax(projection_attention)
+    # proj_loss = tf.math.square(projection_attention * FLAGS.conc)
+    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
+    # proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
+    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
+
+    # Penalizes the model for having a graph that does not have well-distributed update
+    # graph_loss = tf.math.softmax(tf.reshape(projection_attention, [-1, FLAGS.graph_size]), -1)
+    # graph_loss = tf.math.softmax(tf.reduce_sum(graph_loss, 0))
+    # concentration = FLAGS.embed_batch_size * FLAGS.sparse_len if FLAGS.embed_batch_size * FLAGS.sparse_len <= FLAGS.graph_size else FLAGS.graph_size
+    # graph_loss = tf.math.square(graph_loss * concentration)
+    # graph_loss = tf.reduce_sum(graph_loss) / concentration
+    # graph_loss = tf.math.abs(tf.math.log(tf.math.sqrt(graph_loss)))
+    # graph_loss = FLAGS.update_loss * graph_loss
+
+    # loss = tf.cond(tf.constant(is_embedding), lambda: loss + FLAGS.sparse_loss * tf.reduce_mean(proj_loss) + graph_loss, lambda: loss)
 
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
@@ -120,10 +144,11 @@ def model_fn(features, labels, mode, params):
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
         'sparse_attention': compress_attention,
-        'pickout_attention': pickOut_attention,
-        'projection_attention': projection_attention,
-        'sparse_loss': sparse_loss
+        'sparse_out': sparse_out,
+        # 'sparse_loss': proj_loss
     }
+
+    graphNodes = tf.compat.v1.global_variables()[2]
 
     for i, weight in enumerate(encoder_attention_weights):
         predictions["encoder_layer" + str(i + 1)] = weight
@@ -143,6 +168,8 @@ def model_fn(features, labels, mode, params):
         update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step)
+            # if is_embedding:
+            #     train_op = optimizer.minimize(loss, global_step, var_list=[graphNodes])
     else:
         train_op = None
 
@@ -192,7 +219,23 @@ def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_trai
     return input_fn
 
 
+def kmeans_input_fn_generator(training, tensors):
+    def kmeans_input_fn():
+        d = tf.data.Dataset.from_tensors(tensors)
+        if training:
+            d = d.shuffle(buffer_size=1024)
+            d = d.repeat()
+        return d
+
+    return kmeans_input_fn
+
+
 def main(argv=None):
+    flags = tf.compat.v1.flags.FLAGS.flag_values_dict()
+    for i, key in enumerate(flags.keys()):
+        if i > 18:
+            print(key + ": " + str(flags[key]))
+
     mirrored_strategy = tf.distribute.MirroredStrategy()
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
@@ -202,118 +245,213 @@ def main(argv=None):
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
                                        params={'vocab_size': vocab_size, 'embedding': False}, config=config)
 
+    embed_estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
+                                       params={'vocab_size': vocab_size, 'embedding': True}, config=config)
+
+    cluster_estimator = tf.compat.v1.estimator.experimental.KMeans(model_dir=FLAGS.graph_dir,
+                                                                   num_clusters=FLAGS.graph_size,
+                                                                   use_mini_batch=False)
+
+    language_train_input_fn = file_based_input_fn_builder(
+        input_file="training",
+        sequence_length=FLAGS.seq_len,
+        batch_size=FLAGS.batch_size,
+        is_training=True,
+        drop_remainder=True)
+
+    language_eval_input_fn = file_based_input_fn_builder(
+        input_file="testing",
+        sequence_length=FLAGS.seq_len,
+        batch_size=1,
+        is_training=False,
+        drop_remainder=True)
+
+    facts_train_input_fn = file_based_input_fn_builder(
+        input_file="facts_only_training",
+        sequence_length=FLAGS.seq_len,
+        batch_size=FLAGS.embed_batch_size,
+        is_training=True,
+        drop_remainder=True)
+
+    facts_eval_input_fn = file_based_input_fn_builder(
+        input_file="facts_only_testing",
+        sequence_length=FLAGS.seq_len,
+        batch_size=1,
+        is_training=False,
+        drop_remainder=True)
+
     if FLAGS.train:
         print("***************************************")
         print("Training")
         print("***************************************")
 
-        train_input_fn = file_based_input_fn_builder(
-            input_file="training",
-            sequence_length=FLAGS.seq_len,
-            batch_size=FLAGS.batch_size,
-            is_training=True,
-            drop_remainder=True)
-
         trainspec = tf.estimator.TrainSpec(
-            input_fn=train_input_fn,
+            input_fn=language_train_input_fn,
             max_steps=FLAGS.train_steps)
 
-        eval_input_fn = file_based_input_fn_builder(
-            input_file="testing",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
         evalspec = tf.estimator.EvalSpec(
-            input_fn=eval_input_fn)
+            input_fn=language_eval_input_fn)
 
         tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
 
-        updates = estimator.get_variable_value("nodeUpdates").astype(int)
-        values = estimator.get_variable_value("nodes")
+        print("***************************************")
+        print("Facts only eval")
+        print("***************************************")
 
-        for i in range(len(updates)):
-            print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
+        estimator.evaluate(facts_eval_input_fn, name="Facts only eval")
 
-        print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
-        print("total: " + str(np.sum(updates)))
+        # updates = estimator.get_variable_value("nodeUpdates").astype(int)
+        # values = estimator.get_variable_value("nodes")
+        #
+        # for i in range(len(updates)):
+        #     print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
+        #
+        # print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
+        # print("total: " + str(np.sum(updates)))
 
 
     if FLAGS.embed:
+        # print("***************************************")
+        # print("Embedding")
+        # print("***************************************")
+        #
+        # trainspec = tf.estimator.TrainSpec(
+        #     input_fn=facts_train_input_fn,
+        #     max_steps=FLAGS.embed_steps)
+        #
+        # evalspec = tf.estimator.EvalSpec(
+        #     input_fn=facts_eval_input_fn)
+        #
+        # tf.estimator.train_and_evaluate(embed_estimator, trainspec, evalspec)
+        #
+        # print("***************************************")
+        # print("Facts only eval")
+        # print("***************************************")
+        #
+        # estimator.evaluate(facts_eval_input_fn, name="Facts only eval")
+        #
+        # updates = embed_estimator.get_variable_value("nodeUpdates").astype(int)
+        # values = embed_estimator.get_variable_value("nodes")
+        #
+        # for i in range(len(updates)):
+        #     print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
+        #
+        # print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
+        # print("total: " + str(np.sum(updates)))
+
         print("***************************************")
-        print("Embedding")
+        print("Cluster with K-Means")
         print("***************************************")
 
-        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
-                                           params={'vocab_size': vocab_size, 'embedding': True},
-                                           config=config)
+        all_predictions = []
 
-        train_input_fn = file_based_input_fn_builder(
+        input_fn = file_based_input_fn_builder(
             input_file="facts_only_training",
-            sequence_length=FLAGS.seq_len,
-            batch_size=FLAGS.embed_batch_size,
-            is_training=True,
-            drop_remainder=True)
-
-        trainspec = tf.estimator.TrainSpec(
-            input_fn=train_input_fn,
-            max_steps=FLAGS.embed_steps)
-
-        eval_input_fn = file_based_input_fn_builder(
-            input_file="facts_only_testing",
             sequence_length=FLAGS.seq_len,
             batch_size=1,
             is_training=False,
             drop_remainder=True)
 
-        evalspec = tf.estimator.EvalSpec(
-            input_fn=eval_input_fn)
+        results = estimator.predict(input_fn=input_fn, predict_keys=['sparse_out'])
 
-        tf.estimator.train_and_evaluate(estimator, trainspec, evalspec)
+        for result in results:
+            concepts = list(result['sparse_out'])
+            all_predictions += concepts
 
-        updates = estimator.get_variable_value("nodeUpdates").astype(int)
-        values = estimator.get_variable_value("nodes")
+        results = estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['sparse_out'])
 
-        for i in range(len(updates)):
-            print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
+        for result in results:
+            concepts = list(result['sparse_out'])
+            all_predictions += concepts
 
-        print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
-        print("total: " + str(np.sum(updates)))
+        concepts = np.array(all_predictions)
+
+        # train
+        cluster_estimator.train(kmeans_input_fn_generator(True, concepts), max_steps=FLAGS.embed_steps)
+
+        # embed the edges
+        edges = np.zeros([FLAGS.graph_size, FLAGS.graph_size])
+        cluster_indices = list(cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts)))
+        previous_index = -1
+        for i, point in enumerate(np.array(all_predictions)):
+            cluster_index = cluster_indices[i]
+            # center = cluster_centers[cluster_index]
+            if previous_index != -1 and i % FLAGS.sparse_len != 0:
+                edges[previous_index, cluster_index] = 1
+            previous_index = cluster_index
+
+            # 'point:', point, 'is in cluster', cluster_index, 'centered at', center
+
+        print("number of edges: " + str(np.sum(edges)))
+
+        print("Ended Clustering")
 
     if FLAGS.predict:
         print("***************************************")
         print("Predicting")
         print("***************************************")
 
-        pred_input_fn = file_based_input_fn_builder(
-            input_file="facts_only_testing",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
-        print("Started predicting")
-
-        results = estimator.predict(input_fn=pred_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
-                                                                          'pickout_attention', 'projection_attention',
-                                                                          'sparse_loss'] + encoderLayerNames)
-
-        print("Ended predicting")
+        results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+                                                                          'sparse_out'] + encoderLayerNames)
 
         for i, result in enumerate(results):
             print("------------------------------------")
             output_sentence = result['prediction']
             input_sentence = result['original']
             sparse_attention = result['sparse_attention']
-            sparse_loss = result['sparse_loss']
+            sparse_out = result['sparse_out']
+            # sparse_loss = result['sparse_loss']
             print("result: " + str(output_sentence))
-            print("sparse loss: " + str(sparse_loss))
+            # print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            print("pickout attention: " + str(np.sort(result['pickout_attention'])[:, :, -3:]))
-            print("pickout indices: " + str(np.argsort(result['pickout_attention'])[:, :, -3:]))
-            print("projection_attention: " + str(result['projection_attention']))
+            # print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
+            # print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
+            # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
+
+            if i + 1 == FLAGS.predict_samples:
+                # for layerName in encoderLayerNames:
+                #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
+                break
+
+        print("***************************************")
+        print("Verifying Connections")
+        print("***************************************")
+
+        connection_input_fn = file_based_input_fn_builder(
+            input_file="connections",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
+                                                                          'sparse_out'] + encoderLayerNames)
+
+        all_predictions = []
+        output_sentences = []
+        input_sentences = []
+        sparse_attentions = []
+
+        for result in results:
+            concepts = list(result['sparse_out'])
+            all_predictions += concepts
+            output_sentences.append(result['prediction'])
+            input_sentences.append(result['original'])
+            sparse_attentions.append(result['sparse_attention'])
+
+        concepts = np.array(all_predictions)
+        print("concept shape: " + str(concepts.shape))
+        clustered_indices = cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts))
+        print("clustered_indices: " + str(clustered_indices))
+        clustered_indices = np.reshape(list(clustered_indices), [-1, FLAGS.sparse_len])
+
+        for i in range(len(output_sentences)):
+            print("------------------------------------")
+            print("result: " + str(output_sentences[i]))
+            print("decoded: " + str(tokenizer.decode([j for j in output_sentences[i] if j < tokenizer.vocab_size])))
+            print("original: " + str(tokenizer.decode([j for j in input_sentences[i] if j < tokenizer.vocab_size])))
+            print("cluster indices: " + str(clustered_indices[i]))
             plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
 
             if i + 1 == FLAGS.predict_samples:
@@ -321,7 +459,40 @@ def main(argv=None):
                 #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
 
-        print("Ended showing result")
+        # print("***************************************")
+        # print("Visualize Graph Distribution")
+        # print("***************************************")
+        #
+        # all_indices = []
+        #
+        # input_fn = file_based_input_fn_builder(
+        #     input_file="facts_only_training",
+        #     sequence_length=FLAGS.seq_len,
+        #     batch_size=1,
+        #     is_training=False,
+        #     drop_remainder=True)
+        #
+        # results = embed_estimator.predict(input_fn=input_fn, predict_keys=['projection_attention'])
+        #
+        # for result in results:
+        #     indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [FLAGS.sparse_len]))
+        #     all_indices += indices
+        #
+        # results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['projection_attention'])
+        #
+        # for result in results:
+        #     indices = list(np.reshape(np.argmax(result['projection_attention'], axis=1), [FLAGS.sparse_len]))
+        #     all_indices += indices
+        #
+        # indices, values = np.unique(all_indices, return_counts=True)
+        #
+        # for index, count in zip(indices, values):
+        #     print(str(index) + ": Updates: " + str(count))
+        #
+        # print("non-zeros: " + str(len(indices)))
+        # print("total: " + str(np.sum(values)))
+        #
+        # print("Ended showing result")
 
 
 def plot_attention_weights(attention, encoded_sentence, tokenizer, compressed):

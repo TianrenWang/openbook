@@ -1,5 +1,6 @@
 data/*
 model/*
+graph_model/*
 .idea/*
 __pycache__/*
 encoded_data/*
