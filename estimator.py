@@ -43,28 +43,10 @@ flags.DEFINE_integer("heads", default=4,
       help="number of heads")
 flags.DEFINE_integer("seq_len", default=48,
       help="length of the each fact")
-flags.DEFINE_integer("sparse_len", default=2,
-      help="the length of the sparse representation")
-flags.DEFINE_integer("sparse_lim", default=6,
-      help="maximum number of keys each query can attend to")
-flags.DEFINE_bool("use_sparse", default=False,
-      help="whether to use sparse attention")
-flags.DEFINE_float("sparse_thresh", default=0.0,
-      help="the threshold to keep the attention weight")
-flags.DEFINE_float("conc", default=1.4,
-      help="concentration factor multiplier")
-flags.DEFINE_float("sparse_loss", default=0,
-      help="sparse loss multiplier")
-flags.DEFINE_float("update_loss", default=0,
-      help="update loss multiplier")
-flags.DEFINE_float("alpha", default=0.98,
-      help="exponentially smoothed average constant")
 flags.DEFINE_integer("graph_size", default=512,
       help="the number of nodes in the graph")
 flags.DEFINE_integer("batch_size", default=128,
       help="batch size for training")
-flags.DEFINE_integer("embed_batch_size", default=128,
-      help="the batch size for the embedding steps")
 flags.DEFINE_integer("layers", default=2,
       help="number of layers")
 flags.DEFINE_integer("depth", default=128,
@@ -95,13 +77,11 @@ encoderLayerNames = ['encoder_layer{}'.format(i + 1) for i in range(FLAGS.layers
 
 def model_fn(features, labels, mode, params):
     sentences = features["input_ids"]
-    facts = tf.cast(features["input_fact"], tf.int32)
     vocab_size = params['vocab_size'] + 2
-    is_embedding = params['embedding']
 
     network = transformer_model.TED_generator(vocab_size, FLAGS)
 
-    logits, encoder_attention_weights, compress_attention, sparse_out = network(sentences, facts, mode == tf.estimator.ModeKeys.TRAIN, is_embedding)
+    logits, encoder_attention_weights, encoder_out = network(sentences, mode == tf.estimator.ModeKeys.TRAIN)
 
     def loss_function(real, pred):
         mask = tf.math.logical_not(tf.math.equal(real, 0))  # Every element that is NOT padded
@@ -116,30 +96,6 @@ def model_fn(features, labels, mode, params):
     # Calculate the loss
     loss = loss_function(tf.slice(sentences, [0, 1], [-1, -1]), logits)
 
-    # Penalizes the model for having projection attention that is indecisive about which nodes to pick
-
-    # This one uses cross entropy to impart sparse loss
-    # projection_targets = tf.math.argmax(projection_attention, -1)
-    # proj_loss = tf.keras.losses.sparse_categorical_crossentropy(projection_targets, projection_attention, from_logits=True)
-
-    # This one uses pseudo squared mean error as sparse loss
-    # projection_attention = tf.nn.softmax(projection_attention)
-    # proj_loss = tf.math.square(projection_attention * FLAGS.conc)
-    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) / FLAGS.conc
-    # proj_loss = tf.math.abs(tf.math.log(tf.math.sqrt(proj_loss)))
-    # proj_loss = tf.reduce_sum(proj_loss, axis=-1) * tf.cast(facts, tf.float32)
-
-    # Penalizes the model for having a graph that does not have well-distributed update
-    # graph_loss = tf.math.softmax(tf.reshape(projection_attention, [-1, FLAGS.graph_size]), -1)
-    # graph_loss = tf.math.softmax(tf.reduce_sum(graph_loss, 0))
-    # concentration = FLAGS.embed_batch_size * FLAGS.sparse_len if FLAGS.embed_batch_size * FLAGS.sparse_len <= FLAGS.graph_size else FLAGS.graph_size
-    # graph_loss = tf.math.square(graph_loss * concentration)
-    # graph_loss = tf.reduce_sum(graph_loss) / concentration
-    # graph_loss = tf.math.abs(tf.math.log(tf.math.sqrt(graph_loss)))
-    # graph_loss = FLAGS.update_loss * graph_loss
-
-    # loss = tf.cond(tf.constant(is_embedding), lambda: loss + FLAGS.sparse_loss * tf.reduce_mean(proj_loss) + graph_loss, lambda: loss)
-
     # Create a tensor named cross_entropy for logging purposes.
     tf.identity(loss, name='loss')
     tf.summary.scalar('loss', loss)
@@ -147,12 +103,8 @@ def model_fn(features, labels, mode, params):
     predictions = {
         'original': features["input_ids"],
         'prediction': tf.argmax(logits, 2),
-        'sparse_attention': compress_attention,
-        'sparse_out': sparse_out,
-        # 'sparse_loss': proj_loss
+        'encoder_out': encoder_out
     }
-
-    graphNodes = tf.compat.v1.global_variables()[2]
 
     for i, weight in enumerate(encoder_attention_weights):
         predictions["encoder_layer" + str(i + 1)] = weight
@@ -172,8 +124,6 @@ def model_fn(features, labels, mode, params):
         update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step)
-            # if is_embedding:
-            #     train_op = optimizer.minimize(loss, global_step, var_list=[graphNodes])
     else:
         train_op = None
 
@@ -247,10 +197,10 @@ def main(argv=None):
     vocab_size, tokenizer = text_processor.text_processor(FLAGS.data_dir, FLAGS.seq_len, FLAGS.vocab_level, "encoded_data")
 
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
-                                       params={'vocab_size': vocab_size, 'embedding': False}, config=config)
+                                       params={'vocab_size': vocab_size}, config=config)
 
     embed_estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=FLAGS.model_dir,
-                                       params={'vocab_size': vocab_size, 'embedding': True}, config=config)
+                                       params={'vocab_size': vocab_size}, config=config)
 
     cluster_estimator = tf.compat.v1.estimator.experimental.KMeans(model_dir=FLAGS.graph_dir,
                                                                    num_clusters=FLAGS.graph_size,
@@ -273,7 +223,7 @@ def main(argv=None):
     facts_train_input_fn = file_based_input_fn_builder(
         input_file="facts_only_training",
         sequence_length=FLAGS.seq_len,
-        batch_size=FLAGS.embed_batch_size,
+        batch_size=1,
         is_training=True,
         drop_remainder=True)
 
@@ -304,45 +254,8 @@ def main(argv=None):
 
         estimator.evaluate(facts_eval_input_fn, name="Facts only eval")
 
-        # updates = estimator.get_variable_value("nodeUpdates").astype(int)
-        # values = estimator.get_variable_value("nodes")
-        #
-        # for i in range(len(updates)):
-        #     print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
-        #
-        # print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
-        # print("total: " + str(np.sum(updates)))
-
 
     if FLAGS.embed:
-        # print("***************************************")
-        # print("Embedding")
-        # print("***************************************")
-        #
-        # trainspec = tf.estimator.TrainSpec(
-        #     input_fn=facts_train_input_fn,
-        #     max_steps=FLAGS.embed_steps)
-        #
-        # evalspec = tf.estimator.EvalSpec(
-        #     input_fn=facts_eval_input_fn)
-        #
-        # tf.estimator.train_and_evaluate(embed_estimator, trainspec, evalspec)
-        #
-        # print("***************************************")
-        # print("Facts only eval")
-        # print("***************************************")
-        #
-        # estimator.evaluate(facts_eval_input_fn, name="Facts only eval")
-        #
-        # updates = embed_estimator.get_variable_value("nodeUpdates").astype(int)
-        # values = embed_estimator.get_variable_value("nodes")
-        #
-        # for i in range(len(updates)):
-        #     print(str(i) + ": Updates: " + str(updates[i]) + " -- values: " + str(np.sum(np.abs(values[i]))))
-        #
-        # print("non-zeros: " + str(np.count_nonzero(estimator.get_variable_value("nodeUpdates").astype(int))))
-        # print("total: " + str(np.sum(updates)))
-
         print("***************************************")
         print("Cluster with K-Means")
         print("***************************************")
@@ -356,13 +269,13 @@ def main(argv=None):
             is_training=False,
             drop_remainder=True)
 
-        results = estimator.predict(input_fn=input_fn, predict_keys=['sparse_out'])
+        results = estimator.predict(input_fn=input_fn, predict_keys=['encoder_out'])
 
         for result in results:
             concepts = list(result['sparse_out'])
             all_predictions += concepts
 
-        results = estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['sparse_out'])
+        results = estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['encoder_out'])
 
         for result in results:
             concepts = list(result['sparse_out'])
@@ -395,73 +308,64 @@ def main(argv=None):
         print("Predicting")
         print("***************************************")
 
-        results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
-                                                                          'sparse_out'] + encoderLayerNames)
+        results = embed_estimator.predict(input_fn=facts_eval_input_fn, predict_keys=['prediction', 'original'] + encoderLayerNames)
 
         for i, result in enumerate(results):
             print("------------------------------------")
             output_sentence = result['prediction']
             input_sentence = result['original']
-            sparse_attention = result['sparse_attention']
-            sparse_out = result['sparse_out']
-            # sparse_loss = result['sparse_loss']
             print("result: " + str(output_sentence))
-            # print("sparse loss: " + str(sparse_loss))
             print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
             print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
-            # print("projection_attention: " + str(np.sort(result['projection_attention'])[:, -3:]))
-            # print("projection indices: " + str(np.argsort(result['projection_attention'])[:, -3:]))
-            # plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
 
             if i + 1 == FLAGS.predict_samples:
                 # for layerName in encoderLayerNames:
                 #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
 
-        print("***************************************")
-        print("Verifying Connections")
-        print("***************************************")
-
-        connection_input_fn = file_based_input_fn_builder(
-            input_file="connections",
-            sequence_length=FLAGS.seq_len,
-            batch_size=1,
-            is_training=False,
-            drop_remainder=True)
-
-        results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'sparse_attention',
-                                                                          'sparse_out'] + encoderLayerNames)
-
-        all_predictions = []
-        output_sentences = []
-        input_sentences = []
-        sparse_attentions = []
-
-        for result in results:
-            concepts = list(result['sparse_out'])
-            all_predictions += concepts
-            output_sentences.append(result['prediction'])
-            input_sentences.append(result['original'])
-            sparse_attentions.append(result['sparse_attention'])
-
-        concepts = np.array(all_predictions)
-        print("concept shape: " + str(concepts.shape))
-        clustered_indices = cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts))
-        print("clustered_indices: " + str(clustered_indices))
-        clustered_indices = np.reshape(list(clustered_indices), [-1, FLAGS.sparse_len])
-
-        for i in range(len(output_sentences)):
-            print("------------------------------------")
-            print("result: " + str(output_sentences[i]))
-            print("decoded: " + str(tokenizer.decode([j for j in output_sentences[i] if j < tokenizer.vocab_size])))
-            print("original: " + str(tokenizer.decode([j for j in input_sentences[i] if j < tokenizer.vocab_size])))
-            print("cluster indices: " + str(clustered_indices[i]))
-            plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
-
-            if i + 1 == FLAGS.predict_samples:
-                # for layerName in encoderLayerNames:
-                #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
-                break
+        # print("***************************************")
+        # print("Verifying Connections")
+        # print("***************************************")
+        #
+        # connection_input_fn = file_based_input_fn_builder(
+        #     input_file="connections",
+        #     sequence_length=FLAGS.seq_len,
+        #     batch_size=1,
+        #     is_training=False,
+        #     drop_remainder=True)
+        #
+        # results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'encoder_out'] + encoderLayerNames)
+        #
+        # all_predictions = []
+        # output_sentences = []
+        # input_sentences = []
+        # sparse_attentions = []
+        #
+        # for result in results:
+        #     concepts = list(result['sparse_out'])
+        #     all_predictions += concepts
+        #     output_sentences.append(result['prediction'])
+        #     input_sentences.append(result['original'])
+        #     sparse_attentions.append(result['sparse_attention'])
+        #
+        # concepts = np.array(all_predictions)
+        # print("concept shape: " + str(concepts.shape))
+        # clustered_indices = cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts))
+        # print("clustered_indices: " + str(clustered_indices))
+        # clustered_indices = np.reshape(list(clustered_indices), [-1, FLAGS.sparse_len])
+        #
+        # for i in range(len(output_sentences)):
+        #     print("------------------------------------")
+        #     print("result: " + str(output_sentences[i]))
+        #     print("decoded: " + str(tokenizer.decode([j for j in output_sentences[i] if j < tokenizer.vocab_size])))
+        #     print("original: " + str(tokenizer.decode([j for j in input_sentences[i] if j < tokenizer.vocab_size])))
+        #     print("cluster indices: " + str(clustered_indices[i]))
+        #     plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
+        #
+        #     if i + 1 == FLAGS.predict_samples:
+        #         # for layerName in encoderLayerNames:
+        #         #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
+        #         break
 
         # print("***************************************")
         # print("Visualize Graph Distribution")
