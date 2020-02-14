@@ -2,7 +2,6 @@ import numpy as np
 import tensorflow_datasets as tfds
 import tensorflow as tf
 from sklearn.utils import shuffle
-from random import shuffle
 import os
 import pandas as pd
 
@@ -13,34 +12,36 @@ def create_int_feature(values):
 
 
 def text_processor(data_path, seq_len, vocab_level, processed_path):
-    facts = []
+    samples = []
+    facts_indicator = []
     dir_path = data_path
 
-    def accumulate_facts(filename):
+    def accumulate_samples(sample_list, fact_list, filename, facts=False):
 
         data = open(dir_path + filename, "r")
         line = data.readline().capitalize()
 
         while line:
-            facts.append(str.encode(line[:-2]))
+            sample_list.append(str.encode(line[:-2]))
+            fact_list.append(facts)
             line = data.readline()
 
         data.close()
 
-    accumulate_facts("openbook_facts.txt")
-    accumulate_facts("AristoTable.txt")
-    accumulate_facts("Annotation.txt")
-    accumulate_facts("scitail.txt")
-    accumulate_facts("quartz.txt")
-    accumulate_facts("sciq.txt")
+    accumulate_samples(samples, facts_indicator, "openbook_facts.txt", True)
+    accumulate_samples(samples, facts_indicator, "AristoTable.txt")
+    accumulate_samples(samples, facts_indicator, "Annotation.txt")
+    accumulate_samples(samples, facts_indicator, "scitail.txt")
+    accumulate_samples(samples, facts_indicator, "quartz.txt")
+    accumulate_samples(samples, facts_indicator, "sciq.txt")
 
-    shuffle(facts)
+    facts_indicator, samples = shuffle(facts_indicator, samples)
 
-    tokenizer = get_tokenizer(facts, vocab_level)
+    tokenizer = get_tokenizer(samples, vocab_level)
 
     vocab_size = tokenizer.vocab_size + 2
 
-    def encode(fact):
+    def encode(sample):
         """Turns an abstract in English into BPE (Byte Pair Encoding).
         Adds start and end token to the abstract.
 
@@ -48,23 +49,23 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
         abstract -- the abstract (type: bytes)
         """
 
-        encoded_fact = [tokenizer.vocab_size] + tokenizer.encode(fact) + [tokenizer.vocab_size + 1]
+        encoded_sample = [tokenizer.vocab_size] + tokenizer.encode(sample) + [tokenizer.vocab_size + 1]
 
-        return encoded_fact
+        return encoded_sample
 
     # lengths = [0] * 200
 
     if not os.path.exists(processed_path):
         os.makedirs(processed_path)
 
-    def write_tfrecords(data, data_name):
+    def write_tfrecords(samples, facts, data_name):
         full_path = processed_path + "/" + data_name + ".tfrecords"
         if not os.path.exists(full_path):
 
             writer = tf.io.TFRecordWriter(full_path)
 
-            for fact in data:
-                encoded_fact = encode(fact)
+            for sample, fact in zip(samples, facts):
+                encoded_fact = encode(sample)
                 # lengths[len(encoded_fact)] += 1
                 fact_length = len(encoded_fact)
                 padding = seq_len - fact_length
@@ -74,19 +75,41 @@ def text_processor(data_path, seq_len, vocab_level, processed_path):
                     example = {}
                     example["input_ids"] = create_int_feature(feature)
                     example["input_len"] = create_int_feature([fact_length])
+                    example["input_fact"] = create_int_feature([fact])
 
                     tf_example = tf.train.Example(features=tf.train.Features(feature=example))
                     writer.write(tf_example.SerializeToString())
 
             writer.close()
 
-    write_tfrecords(facts[:-1000], "training")
-    write_tfrecords(facts[-1000:], "testing")
-    write_tfrecords(facts[-1000:], "predict")
+    write_tfrecords(samples[:-2000], facts_indicator[:-2000], "training")
+    write_tfrecords(samples[-2000:], facts_indicator[-2000:], "testing")
+    write_tfrecords(samples[-2000:], facts_indicator[-2000:], "predict")
+
+    train_facts = samples[:-2000]
+    train_facts_indictator = facts_indicator[:-2000]
+
+    train_facts = [train_facts[i] for i in range(len(train_facts_indictator)) if train_facts_indictator[i]]
+    train_facts_indictator = [i for i in train_facts_indictator if i]
+
+    test_facts = samples[-2000:]
+    test_facts_indictator = facts_indicator[-2000:]
+
+    test_facts = [test_facts[i] for i in range(len(test_facts_indictator)) if test_facts_indictator[i]]
+    test_facts_indictator = [i for i in test_facts_indictator if i]
+
+    write_tfrecords(train_facts, train_facts_indictator, "facts_only_training")
+    write_tfrecords(test_facts, test_facts_indictator, "facts_only_testing")
 
     # Get the distribution on the length of each fact in tokens
     # for i, length in enumerate(lengths):
     #     print(str(i) + ": " + str(length))
+
+    # This dataset will be used to test how well the connections form between concepts
+    samples = []
+    facts_indicator = []
+    accumulate_samples(samples, facts_indicator, "connection.txt", True)
+    write_tfrecords(samples, facts_indicator, "connections")
 
     return vocab_size, tokenizer
 

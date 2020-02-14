@@ -3,7 +3,7 @@
 #SBATCH --gres=gpu:p100:1        # request GPU "generic resource"
 #SBATCH --cpus-per-task=3   # maximum CPU cores per GPU request: 6 on Cedar, 16$
 #SBATCH --mem=12000M        # memory per node
-#SBATCH --time=0-04:00      # time (DD-HH:MM)
+#SBATCH --time=0-08:00      # time (DD-HH:MM)
 #SBATCH --output=output.out  # %N for node name, %j for jobID
 
 #### local path
@@ -22,23 +22,31 @@ TPU_NAME=
 python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
-  --train_steps=200000 \
+  --graph_dir=graph_model/ \
+  --train_steps=100000 \
+  --embed_steps=50000 \
   --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \
-  --seq_len=36 \
-  --sparse_len=8 \
+  --seq_len=40 \
+  --sparse_len=5 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
-  --conc=1.4 \
-  --sparse_loss=0 \
-  --batch_size=64 \
+  --conc=3 \
+  --sparse_loss=1e-5 \
+  --update_loss=1e-5 \
+  --alpha=0.9 \
+  --graph_size=512 \
+  --batch_size=128 \
+  --embed_batch_size=128 \
   --layers=4 \
-  --depth=128 \
+  --depth=256 \
   --feedforward=512 \
   --train=True \
+  --embed=True \
   --predict=True \
   --predict_samples=10 \
+  --description="Put experiment description here" \
 
   $@
