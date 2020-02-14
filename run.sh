@@ -22,22 +22,24 @@ TPU_NAME=
 python3 estimator.py \
   --data_dir=data/ \
   --model_dir=model/ \
+  --graph_dir=graph_model/ \
   --train_steps=100000 \
-  --embed_steps=110000 \
+  --embed_steps=50000 \
   --vocab_level=13 \
   --dropout=0.1 \
   --heads=8 \
   --seq_len=40 \
-  --sparse_len=3 \
+  --sparse_len=5 \
   --sparse_lim=6 \
   --use_sparse=False \
   --sparse_thresh=0.0 \
   --conc=3 \
   --sparse_loss=1e-5 \
+  --update_loss=1e-5 \
   --alpha=0.9 \
   --graph_size=512 \
   --batch_size=128 \
-  --embed_batch_size=32 \
+  --embed_batch_size=128 \
   --layers=4 \
   --depth=256 \
   --feedforward=512 \
@@ -45,5 +47,6 @@ python3 estimator.py \
   --embed=True \
   --predict=True \
   --predict_samples=10 \
+  --description="Put experiment description here" \
 
   $@
