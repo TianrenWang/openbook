@@ -324,49 +324,38 @@ def main(argv=None):
                 #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
                 break
 
-        # print("***************************************")
-        # print("Verifying Connections")
-        # print("***************************************")
-        #
-        # connection_input_fn = file_based_input_fn_builder(
-        #     input_file="connections",
-        #     sequence_length=FLAGS.seq_len,
-        #     batch_size=1,
-        #     is_training=False,
-        #     drop_remainder=True)
-        #
-        # results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'encoder_out'] + encoderLayerNames)
-        #
-        # all_predictions = []
-        # output_sentences = []
-        # input_sentences = []
-        # sparse_attentions = []
-        #
-        # for result in results:
-        #     concepts = list(result['sparse_out'])
-        #     all_predictions += concepts
-        #     output_sentences.append(result['prediction'])
-        #     input_sentences.append(result['original'])
-        #     sparse_attentions.append(result['sparse_attention'])
-        #
-        # concepts = np.array(all_predictions)
-        # print("concept shape: " + str(concepts.shape))
-        # clustered_indices = cluster_estimator.predict_cluster_index(kmeans_input_fn_generator(False, concepts))
-        # print("clustered_indices: " + str(clustered_indices))
-        # clustered_indices = np.reshape(list(clustered_indices), [-1, FLAGS.sparse_len])
-        #
-        # for i in range(len(output_sentences)):
-        #     print("------------------------------------")
-        #     print("result: " + str(output_sentences[i]))
-        #     print("decoded: " + str(tokenizer.decode([j for j in output_sentences[i] if j < tokenizer.vocab_size])))
-        #     print("original: " + str(tokenizer.decode([j for j in input_sentences[i] if j < tokenizer.vocab_size])))
-        #     print("cluster indices: " + str(clustered_indices[i]))
-        #     plot_attention_weights(sparse_attention, input_sentence, tokenizer, True)
-        #
-        #     if i + 1 == FLAGS.predict_samples:
-        #         # for layerName in encoderLayerNames:
-        #         #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
-        #         break
+        print("***************************************")
+        print("Verifying Connections")
+        print("***************************************")
+
+        connection_input_fn = file_based_input_fn_builder(
+            input_file="connections",
+            sequence_length=FLAGS.seq_len,
+            batch_size=1,
+            is_training=False,
+            drop_remainder=True)
+
+        results = embed_estimator.predict(input_fn=connection_input_fn, predict_keys=['prediction', 'original', 'encoder_out'] + encoderLayerNames)
+        previousEncoded = None
+        previousSentence = None
+        first = True
+
+        for i, result in enumerate(results):
+            print("------------------------------------")
+            output_sentence = result['prediction']
+            input_sentence = result['original']
+            encoded_output = result['encoder_out']
+            print("result: " + str(output_sentence))
+            print("decoded: " + str(tokenizer.decode([i for i in output_sentence if i < tokenizer.vocab_size])))
+            print("original: " + str(tokenizer.decode([i for i in input_sentence if i < tokenizer.vocab_size])))
+
+            if not first:
+                similarity = np.matmul(encoded_output, np.transpose(previousEncoded))
+                find_similarities(similarity, input_sentence, previousSentence, tokenizer)
+
+            first = False
+            previousEncoded = encoded_output
+            previousSentence = input_sentence
 
         # print("***************************************")
         # print("Visualize Graph Distribution")
@@ -404,36 +393,32 @@ def main(argv=None):
         # print("Ended showing result")
 
 
-def plot_attention_weights(attention, encoded_sentence, tokenizer, compressed):
+def find_similarities(similarity, query_sentence, compare_sentence, tokenizer):
     fig = plt.figure(figsize=(16, 8))
-    result = list(range(attention.shape[1]))
+    result = list(range(similarity.shape[1]))
 
-    sentence = encoded_sentence
     fontdict = {'fontsize': 10}
 
-    for head in range(attention.shape[0]):
-        ax = fig.add_subplot(2, 4, head + 1)
+    ax = fig.add_subplot(1, 1, 1)
 
-        input_sentence = ['<start>'] + [tokenizer.decode([i]) for i in sentence if i < tokenizer.vocab_size and i != 0] + ['<end>']
-        output_sentence = input_sentence
+    # This goes on the X-axis
+    input_sentence = ['<start>'] + [tokenizer.decode([i]) for i in compare_sentence if i < tokenizer.vocab_size and i != 0] + ['<end>']
 
-        ax.set_xticklabels(input_sentence, fontdict=fontdict, rotation=90)
+    # This goes on the Y-axis
+    output_sentence = ['<start>'] + [tokenizer.decode([i]) for i in query_sentence if i < tokenizer.vocab_size and i != 0] + ['<end>']
 
-        if compressed: # check if this is the compressed layer
-            output_sentence = list(range(FLAGS.sparse_len))
+    ax.set_xticklabels(input_sentence, fontdict=fontdict, rotation=90)
 
-        ax.set_yticklabels(output_sentence, fontdict=fontdict)
+    ax.set_yticklabels(output_sentence, fontdict=fontdict)
 
-        # plot the attention weights
-        ax.matshow(attention[head][:len(output_sentence), :len(input_sentence)], cmap='viridis')
+    # plot the similarity weights
+    ax.matshow(similarity[:len(output_sentence), :len(input_sentence)], cmap='viridis')
 
-        ax.set_xticks(range(len(sentence) + 2))
-        ax.set_yticks(range(len(result)))
+    ax.set_xticks(range(len(query_sentence) + 2))
+    ax.set_yticks(range(len(result)))
 
-        ax.set_ylim(len(output_sentence) - 1, 0)
-        ax.set_xlim(0, len(input_sentence) - 1)
-
-        ax.set_xlabel('Head {}'.format(head + 1))
+    ax.set_ylim(len(output_sentence) - 1, 0)
+    ax.set_xlim(0, len(input_sentence) - 1)
 
     plt.tight_layout()
     plt.show()
