@@ -1,6 +1,10 @@
 data/*
-model/*
-graph_model/*
+gnn_model/*
+knowledge_graph/*
 .idea/*
 __pycache__/*
 encoded_data/*
+question_data/*
+GraphEdges.npy
+similarity.py
+words_checker.py

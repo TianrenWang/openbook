@@ -19,24 +19,13 @@ GS_MODEL_DIR=${GS_ROOT}/experiment/race
 # TPU name in google cloud
 TPU_NAME=
 
-python3 estimator.py \
+python3 kmeans_estimator.py \
   --data_dir=data/ \
-  --model_dir=model/ \
-  --graph_dir=graph_model/ \
-  --train_steps=100000 \
-  --embed_steps=1000 \
-  --vocab_level=13 \
-  --dropout=0.1 \
-  --heads=8 \
-  --seq_len=40 \
+  --graph_dir=knowledge_graph/ \
+  --embed_steps=100 \
   --graph_size=512 \
-  --batch_size=128 \
-  --layers=4 \
-  --depth=256 \
-  --feedforward=512 \
-  --train=True \
   --embed=True \
-  --predict=True \
+  --predict=False \
   --predict_samples=10 \
   --description="Put experiment description here" \
 
