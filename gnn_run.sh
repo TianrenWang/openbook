@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#SBATCH --gres=gpu:p100:1        # request GPU "generic resource"
-#SBATCH --cpus-per-task=3   # maximum CPU cores per GPU request: 6 on Cedar, 16$
-#SBATCH --mem=12000M        # memory per node
-#SBATCH --time=0-08:00      # time (DD-HH:MM)
+#SBATCH --gres=gpu:v100:4        # request GPU "generic resource"
+#SBATCH --cpus-per-task=12   # maximum CPU cores per GPU request: 6 on Cedar, 16$
+#SBATCH --mem=50000M        # memory per node
+#SBATCH --time=0-04:00      # time (DD-HH:MM)
 #SBATCH --output=output.out  # %N for node name, %j for jobID
 
 #### local path
@@ -23,11 +23,11 @@ python3 gnn_estimator.py \
   --data_dir=data/ \
   --graph_dir=knowledge_graph/ \
   --model_dir=gnn_model/ \
-  --train_steps=10 \
+  --train_steps=50000 \
   --dropout=0.5 \
   --seq_len=80 \
-  --recurrences=10 \
-  --batch_size=4 \
+  --recurrences=5 \
+  --batch_size=32 \
   --learning_rate=1e-5 \
   --train=True \
   --predict=True \
