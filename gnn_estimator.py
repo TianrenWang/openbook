@@ -154,12 +154,13 @@ def model_fn(features, labels, mode, params):
     projection_signal = tf.reshape(encoded_question, [-1, 300])
     print("projection_signal: " + str(projection_signal))
     batch_of_nodes = tf.tensor_scatter_nd_add(tf.reshape(batch_of_nodes, [-1, 512, 300]), positions, projection_signal)
-    batch_of_nodes = tf.keras.layers.LayerNormalization(epsilon=1e-6)(batch_of_nodes)
     print("batch_of_nodes: " + str(batch_of_nodes))
     batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, 300]))
 
     def model_fn(size):
-        return snt.Sequential([snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout)])
+        return snt.Sequential([snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout), snt.LayerNorm(axis=0,
+                                                                                                            create_scale=True,
+                                                                                                            create_offset=True)])
 
     global_model = model_fn(depth)
     edge_model = model_fn(1)
@@ -345,7 +346,6 @@ def main(argv=None):
         correct = 0
 
         for i, result in enumerate(results):
-            print(i)
             predicted_choice = result['prediction']
             correct_choice = result['correct']
             if i + 1 < FLAGS.predict_samples:
