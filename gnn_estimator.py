@@ -109,16 +109,17 @@ def model_fn(features, labels, mode, params):
     nodes = graph_nodes.astype(np.float32)
     edges = np.ones([int(np.sum(graph_edges)), 1]).astype(np.float32)
     senders, receivers = np.nonzero(graph_edges)
-    print("senders: " + str(senders))
-    print("receivers: " + str(receivers))
 
     graph_dict = {"globals": globals,
                   "nodes": nodes,
                   "edges": edges,
                   "senders": senders,
                   "receivers": receivers}
+    original_graph = utils_tf.data_dicts_to_graphs_tuple([graph_dict])
+    graph_dict["nodes"] = nodes * 0
     print("encoded_question.shape[0]: " + str(encoded_question.shape[0]))
     batch_of_tensor_data_dicts = [graph_dict for i in range(sentences.shape[0])]
+
     batch_of_graphs = utils_tf.data_dicts_to_graphs_tuple(batch_of_tensor_data_dicts)
     batch_of_nodes = batch_of_graphs.nodes
     print("batch_of_nodes: " + str(batch_of_nodes))
@@ -179,15 +180,19 @@ def model_fn(features, labels, mode, params):
 
     num_recurrent_passes = FLAGS.recurrences
     previous_graphs = batch_of_graphs
+    original_nodes = tf.reshape(original_graph.nodes, [1, 512, 300])
 
     for unused_pass in range(num_recurrent_passes):
-        print("previous_graphs" + str(unused_pass) + ": " + str(previous_graphs))
         if training:
             previous_graphs = train_graph_network(previous_graphs)
             previous_graphs = train_global_block(previous_graphs)
         else:
             previous_graphs = eval_graph_network(previous_graphs)
             previous_graphs = eval_global_block(previous_graphs)
+        current_nodes = previous_graphs.nodes
+        current_nodes = tf.reshape(current_nodes, [-1, 512, 300])
+        previous_graphs = previous_graphs.replace(nodes=tf.reshape(current_nodes * original_nodes, [-1, 300]))
+
     output_graphs = previous_graphs
 
     output_global = tf.keras.layers.Dropout(FLAGS.dropout)(output_graphs.globals, training=training)
