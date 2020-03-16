@@ -134,11 +134,9 @@ def model_fn(features, labels, mode, params):
 
     # return pairwise euclidead difference matrix
     distance = tf.sqrt(tf.maximum(na - 2 * tf.matmul(encoded_question, nodes, False, True) + nb, 0.0))
-    similarity = 1 - distance
 
     # calculate attention over the graph
-    attention_weights = tf.nn.softmax(similarity, axis=-1)
-    closest_nodes = tf.cast(tf.argmin(attention_weights, -1), tf.int32)
+    closest_nodes = tf.cast(tf.argmin(distance, -1), tf.int32)
     print("closest_nodes: " + str(closest_nodes))
 
     # # Write the signals onto these nodes
