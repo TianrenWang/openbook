@@ -342,21 +342,26 @@ def main(argv=None):
 
         results = gnn_estimator.predict(input_fn=eval_input_fn, predict_keys=['original', 'prediction', 'correct'])
 
+        total = 0
+        correct = 0
+
         for i, result in enumerate(results):
-            print("------------------------------------")
+            print(i)
             predicted_choice = result['prediction']
             correct_choice = result['correct']
-            input_question = result['original']
-            for choice in input_question:
-                print([decoder[word] for word in choice if word != 1])
+            if i + 1 < FLAGS.predict_samples:
+                print("------------------------------------")
+                input_question = result['original']
+                for choice in input_question:
+                    print([decoder[word] for word in choice if word != 1])
 
-            print("predicted_choice: " + str(predicted_choice))
-            print("correct_choice: " + str(correct_choice))
+                print("predicted_choice: " + str(predicted_choice))
+                print("correct_choice: " + str(correct_choice[0]))
+            total += 1
+            if correct_choice[0] == predicted_choice:
+                correct += 1
 
-            if i + 1 == FLAGS.predict_samples:
-                # for layerName in encoderLayerNames:
-                #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
-                break
+        print("Accuracy: " + str(correct / total))
 
 
 def find_similarities(similarity, query_sentence, compare_sentence, tokenizer):
