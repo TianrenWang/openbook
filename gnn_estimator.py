@@ -21,6 +21,7 @@ from graph_nets import modules
 from graph_nets import utils_tf
 import sonnet as snt
 import functools
+import os
 
 
 import tensorflow as tf
@@ -283,8 +284,13 @@ def main(argv=None):
     config = tf.estimator.RunConfig(
         train_distribute=mirrored_strategy, eval_distribute=mirrored_strategy)
 
-
-    word_embedding, decoder = text_processor.openbook_question_processor("data/glove.6B.300d.txt", "question_data", FLAGS.seq_len)
+    if not os.path.exists("question_data"):
+        word_embedding, decoder = text_processor.openbook_question_processor("data/glove.6B.300d.txt", "question_data", FLAGS.seq_len)
+        np.save("question_data/word_embedding", word_embedding)
+        np.save("question_data/decoder", np.array(decoder))
+    else:
+        word_embedding = np.load("question_data/word_embedding.npy")
+        decoder = list(np.load("question_data/decoder.npy"))
     cluster_estimator = tf.compat.v1.estimator.experimental.KMeans(model_dir="knowledge_graph", num_clusters=512)
     graph_clusters = cluster_estimator.cluster_centers()
     graph_edges = np.load("GraphEdges.npy")

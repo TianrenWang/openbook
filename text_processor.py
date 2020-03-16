@@ -162,7 +162,6 @@ def openbook_question_processor(word_embedding_path, processed_path, max_length)
             print(counter)
 
         values = line.strip().split()
-        print(values)
         word = values[0]
         vector = np.asarray(values[1:], dtype='float32')
         vector_sum += vector
