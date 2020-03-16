@@ -344,6 +344,9 @@ def main(argv=None):
         total = 0
         correct = 0
 
+        total = 0
+        correct = 0
+
         for i, result in enumerate(results):
             print(i)
             predicted_choice = result['prediction']
@@ -360,7 +363,7 @@ def main(argv=None):
             if correct_choice[0] == predicted_choice:
                 correct += 1
 
-        print("Accuracy: " + str(correct/total))
+        print("Accuracy: " + str(correct / total))
 
 def find_similarities(similarity, query_sentence, compare_sentence, tokenizer):
     fig = plt.figure(figsize=(16, 8))
