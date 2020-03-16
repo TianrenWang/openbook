@@ -154,13 +154,13 @@ def model_fn(features, labels, mode, params):
     projection_signal = tf.reshape(encoded_question, [-1, 300])
     print("projection_signal: " + str(projection_signal))
     batch_of_nodes = tf.tensor_scatter_nd_add(tf.reshape(batch_of_nodes, [-1, 512, 300]), positions, projection_signal)
+    batch_of_nodes = tf.keras.layers.LayerNormalization(epsilon=1e-6)(batch_of_nodes)
     print("batch_of_nodes: " + str(batch_of_nodes))
     batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, 300]))
 
     def model_fn(size):
-        return snt.Sequential([snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout), snt.LayerNorm(axis=0,
-                                                                                                   create_scale=True,
-                                                                                                   create_offset=True)])
+        return snt.Sequential([snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout)])
+
     global_model = model_fn(depth)
     edge_model = model_fn(1)
     node_model = model_fn(depth)
@@ -341,23 +341,26 @@ def main(argv=None):
         print("***************************************")
 
         results = gnn_estimator.predict(input_fn=eval_input_fn, predict_keys=['original', 'prediction', 'correct'])
+        total = 0
+        correct = 0
 
         for i, result in enumerate(results):
-            print("------------------------------------")
+            print(i)
             predicted_choice = result['prediction']
             correct_choice = result['correct']
-            input_question = result['original']
-            for choice in input_question:
-                print([decoder[word] for word in choice if word != 1])
+            if i + 1 < FLAGS.predict_samples:
+                print("------------------------------------")
+                input_question = result['original']
+                for choice in input_question:
+                    print([decoder[word] for word in choice if word != 1])
 
-            print("predicted_choice: " + str(predicted_choice))
-            print("correct_choice: " + str(correct_choice))
+                print("predicted_choice: " + str(predicted_choice))
+                print("correct_choice: " + str(correct_choice[0]))
+            total += 1
+            if correct_choice[0] == predicted_choice:
+                correct += 1
 
-            if i + 1 == FLAGS.predict_samples:
-                # for layerName in encoderLayerNames:
-                #     plot_attention_weights(result[layerName], input_sentence, tokenizer, False)
-                break
-
+        print("Accuracy: " + str(correct/total))
 
 def find_similarities(similarity, query_sentence, compare_sentence, tokenizer):
     fig = plt.figure(figsize=(16, 8))
