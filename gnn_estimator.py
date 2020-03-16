@@ -350,9 +350,6 @@ def main(argv=None):
         total = 0
         correct = 0
 
-        total = 0
-        correct = 0
-
         for i, result in enumerate(results):
             predicted_choice = result['prediction']
             correct_choice = result['correct']
