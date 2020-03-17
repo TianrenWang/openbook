@@ -81,28 +81,19 @@ def model_fn(features, labels, mode, params):
     depth = graph_nodes.shape[1]
     training = mode == tf.estimator.ModeKeys.TRAIN
 
-    # The model is going to send a write signal to the original graph and perform graph computation
-    # We will not have a state graph. The purpose of this experiment is to make the simplest model for this task.
-    # This is what it will currently do:
-    # 1. Find where each word in question will project to in the graph.
-    # 2. Add a signal onto each of the nodes to be projected by their words.
-    # 3. Perform graph computation for a few rounds.
-    # 4. Extract the final global state.
-    # 5. Softmax over the different choices and predict.
-
     padding_mask = tf.cast(tf.not_equal(tf.cast(sentences, tf.int32), tf.constant([[word_embedding.shape[0] - 1]])),
                            tf.int32)  # 0 means the token needs to be masked. 1 means it is not masked.
     padding_mask = tf.reshape(padding_mask, [-1, FLAGS.seq_len, 1])
     sentences = tf.nn.embedding_lookup(word_embedding, sentences)
-    sentences = tf.reshape(sentences, [-1, FLAGS.seq_len, 300])
+    sentences = tf.reshape(sentences, [-1, FLAGS.seq_len, depth])
     print("sentences: " + str(sentences))
     print("padding_mask: " + str(padding_mask))
-    question_encoder = tf.keras.layers.LSTM(300, dropout=FLAGS.dropout, recurrent_dropout=FLAGS.dropout, return_sequences=True)
+    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, recurrent_dropout=FLAGS.dropout, return_sequences=True)
     # encoded_question = question_encoder(sentences, training=training)
     encoded_question = sentences
     print("encoded_question: " + str(encoded_question))
     encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
-    encoded_question = tf.reshape(encoded_question, [-1, 300])
+    encoded_question = tf.reshape(encoded_question, [-1, depth])
 
     # The template graph
     globals = np.random.randn(FLAGS.global_size).astype(np.float32)
@@ -150,62 +141,47 @@ def model_fn(features, labels, mode, params):
     print("positions: " + str(positions))
     # print("compressed: " + str(compressed1))
     # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-    projection_signal = tf.reshape(encoded_question, [-1, 300])
+    projection_signal = tf.reshape(encoded_question, [-1, depth])
     print("projection_signal: " + str(projection_signal))
-    batch_of_nodes = tf.tensor_scatter_nd_add(tf.reshape(batch_of_nodes, [-1, 512, 300]), positions, projection_signal)
+    batch_of_nodes = tf.tensor_scatter_nd_add(tf.reshape(batch_of_nodes, [-1, 512, depth]), positions, projection_signal)
     print("batch_of_nodes: " + str(batch_of_nodes))
-    batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, 300]))
+    batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, depth]))
 
-    def model_fn(size):
-        return snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout)
+    graph_network = modules.InteractionNetwork(
+        edge_model_fn=lambda: snt.nets.MLP(output_sizes=[1]),
+        node_model_fn=lambda: snt.nets.MLP(output_sizes=[depth]))
 
-    global_model = model_fn(depth)
-    edge_model = model_fn(1)
-    node_model = model_fn(depth)
-
-    train_graph_network = modules.InteractionNetwork(
-        edge_model_fn=lambda: functools.partial(edge_model, is_training=True),
-        node_model_fn=lambda: functools.partial(node_model, is_training=True))
-
-    eval_graph_network = modules.InteractionNetwork(
-        edge_model_fn=lambda: functools.partial(edge_model, is_training=False),
-        node_model_fn=lambda: functools.partial(node_model, is_training=False))
-
-    train_global_block = blocks.GlobalBlock(global_model_fn=lambda: functools.partial(global_model, is_training=True))
-    eval_global_block = blocks.GlobalBlock(global_model_fn=lambda: functools.partial(global_model, is_training=False))
+    global_block = blocks.GlobalBlock(global_model_fn=lambda: snt.nets.MLP(output_sizes=[depth]))
 
     num_recurrent_passes = FLAGS.recurrences
     previous_graphs = batch_of_graphs
-    original_nodes = tf.reshape(original_graph.nodes, [1, 512, 300])
+    original_nodes = tf.reshape(original_graph.nodes, [1, 512, depth])
+    dropout = tf.keras.layers.Dropout(FLAGS.dropout)
+    layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+    layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
     for unused_pass in range(num_recurrent_passes):
-        if training:
-            previous_graphs = train_graph_network(previous_graphs)
-            previous_graphs = train_global_block(previous_graphs)
-        else:
-            previous_graphs = eval_graph_network(previous_graphs)
-            previous_graphs = eval_global_block(previous_graphs)
+        previous_graphs = previous_graphs.replace(nodes=layernorm1(previous_graphs.nodes))
+        previous_graphs = graph_network(previous_graphs)
+        previous_graphs = global_block(previous_graphs)
         current_nodes = previous_graphs.nodes
-        current_nodes = tf.reshape(current_nodes, [-1, 512, 300])
-        previous_graphs = previous_graphs.replace(nodes=tf.reshape(current_nodes * original_nodes, [-1, 300]))
+        current_nodes = tf.reshape(current_nodes, [-1, 512, depth])
+        current_nodes = dropout(current_nodes, training=training)
+        new_nodes = current_nodes * original_nodes
+        previous_graphs = previous_graphs.replace(nodes=tf.reshape(new_nodes, [-1, depth]))
 
     output_graphs = previous_graphs
-
-    output_global = tf.keras.layers.Dropout(FLAGS.dropout)(output_graphs.globals, training=training)
-    dense_layer = tf.keras.layers.Dense(1, activation='relu')
+    output_global = layernorm2(output_graphs.globals)
+    output_global = tf.keras.layers.Dropout(FLAGS.dropout)(output_global, training=training)
+    dense_layer = tf.keras.layers.Dense(1, activation='tanh')
     logits = dense_layer(output_global)
     logits = tf.reshape(logits, [-1, num_choices])
 
     def loss_function(real, pred):
-        loss_ = tf.keras.losses.sparse_categorical_crossentropy(real, pred, from_logits=True)
-        return tf.reduce_mean(loss_)
+        return tf.keras.losses.sparse_categorical_crossentropy(real, pred, from_logits=True)
 
     # Calculate the loss
     loss = loss_function(features["answer_id"], logits)
-
-    # Create a tensor named cross_entropy for logging purposes.
-    tf.identity(loss, name='loss')
-    tf.summary.scalar('loss', loss)
 
     predictions = {
         'original': features["input_ids"],
@@ -227,7 +203,7 @@ def model_fn(features, labels, mode, params):
         # Batch norm requires update ops to be added as a dependency to the train_op
         update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
-            train_op = optimizer.minimize(loss, global_step)
+            train_op = optimizer.minimize(tf.reduce_mean(loss), global_step)
     else:
         train_op = None
 
@@ -312,7 +288,7 @@ def main(argv=None):
     eval_input_fn = file_based_input_fn_builder(
         input_file="validating_questions",
         sequence_length=FLAGS.seq_len,
-        batch_size=1,
+        batch_size=16,
         is_training=False,
         drop_remainder=True)
 
