@@ -157,9 +157,7 @@ def model_fn(features, labels, mode, params):
     batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, 300]))
 
     def model_fn(size):
-        return snt.Sequential([snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout), snt.LayerNorm(axis=0,
-                                                                                                            create_scale=True,
-                                                                                                            create_offset=True)])
+        return snt.nets.MLP(output_sizes=[size], dropout_rate=FLAGS.dropout)
 
     global_model = model_fn(depth)
     edge_model = model_fn(1)
