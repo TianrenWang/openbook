@@ -210,7 +210,7 @@ def model_fn(features, labels, mode, params):
     return tf.estimator.EstimatorSpec(
         mode=mode,
         predictions=predictions,
-        loss=loss,
+        loss=tf.reduce_mean(loss),
         train_op=train_op)
 
 def file_based_input_fn_builder(input_file, sequence_length, batch_size, is_training, drop_remainder):
