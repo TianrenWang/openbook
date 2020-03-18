@@ -88,10 +88,8 @@ def model_fn(features, labels, mode, params):
     sentences = tf.reshape(sentences, [-1, FLAGS.seq_len, depth])
     print("sentences: " + str(sentences))
     print("padding_mask: " + str(padding_mask))
-    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, recurrent_dropout=FLAGS.dropout, return_sequences=True)
-    # encoded_question = question_encoder(sentences, training=training)
-    encoded_question = sentences
-    print("encoded_question: " + str(encoded_question))
+    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True)
+    encoded_question = question_encoder(sentences, training=training)
     encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
     encoded_question = tf.reshape(encoded_question, [-1, depth])
 
