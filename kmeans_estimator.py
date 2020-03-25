@@ -78,18 +78,24 @@ def main(argv=None):
         relationship_index = 0
         cluster_centers = cluster_estimator.cluster_centers()
         for i, concept in enumerate(train_concepts):
+            print("------------------------------")
             if train_connections[i] == []:
                 relationship_index += 1
                 previous_index = -1
             cluster_index = cluster_indices[i]
-            # center = cluster_centers[cluster_index]
-            # print("clustered score: " + str(scipy.spatial.distance.euclidean(center, concept)))
-            # centers = np.array(cluster_centers)
-            # distances = []
-            # for i in range(len(centers)):
-            #     distances.append(scipy.spatial.distance.euclidean(centers[i], concept))
-            # scores = sorted(distances)[:3]
-            # print("other scores: " + str(scores))
+            center = cluster_centers[cluster_index]
+            print("clustered score (with cluster " + str(cluster_index) + ": " + str(scipy.spatial.distance.cosine(center, concept)))
+            distances = []
+            minimum = scipy.spatial.distance.cosine(center, concept)
+            for i in range(len(cluster_centers)):
+                result = scipy.spatial.distance.cosine(cluster_centers[i], concept)
+                if i == cluster_index:
+                    print("result during second calculation: " + str(result))
+                distances.append(result)
+                if result < minimum:
+                    minimum == result
+            print("Minimum result in all clusters: " + str(minimum))
+            #Minimum distance in euclidean distance also gives the minimum distance in cosine distance
             if previous_index != -1:
                 edges_updates[previous_index, cluster_index] += 1
                 edges[previous_index, cluster_index] = 1

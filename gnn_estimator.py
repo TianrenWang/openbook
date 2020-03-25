@@ -86,12 +86,12 @@ def model_fn(features, labels, mode, params):
     padding_mask = tf.reshape(padding_mask, [-1, FLAGS.seq_len, 1])
     sentences = tf.nn.embedding_lookup(word_embedding, sentences)
     sentences = tf.reshape(sentences, [-1, FLAGS.seq_len, depth])
-    print("sentences: " + str(sentences))
-    print("padding_mask: " + str(padding_mask))
-    # question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True)
-    # encoded_question = question_encoder(sentences, training=training)
-    # encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
-    encoded_question = tf.reshape(tf.cast(sentences, tf.float32), [-1, depth])
+    # print("sentences: " + str(sentences))
+    # print("padding_mask: " + str(padding_mask))
+    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True)
+    encoded_question = question_encoder(sentences, training=training)
+    encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
+    encoded_question = tf.reshape(tf.cast(encoded_question, tf.float32), [-1, depth])
 
     # The template graph
     nodes = graph_nodes.astype(np.float32)
@@ -106,16 +106,16 @@ def model_fn(features, labels, mode, params):
                   "receivers": receivers}
     original_graph = utils_tf.data_dicts_to_graphs_tuple([graph_dict])
     graph_dict["nodes"] = nodes * 0
-    print("encoded_question.shape[0]: " + str(encoded_question.shape[0]))
+    # print("encoded_question.shape[0]: " + str(encoded_question.shape[0]))
     batch_of_tensor_data_dicts = [graph_dict for i in range(sentences.shape[0])]
 
     batch_of_graphs = utils_tf.data_dicts_to_graphs_tuple(batch_of_tensor_data_dicts)
     batch_of_nodes = batch_of_graphs.nodes
-    print("batch_of_nodes: " + str(batch_of_nodes))
+    # print("batch_of_nodes: " + str(batch_of_nodes))
 
     # Euclidean distance to identify closest nodes
-    na = tf.reduce_sum(tf.square(encoded_question), 1)
-    nb = tf.reduce_sum(tf.square(nodes), 1)
+    na = tf.reduce_sum(tf.square(tf.math.l2_normalize(encoded_question, -1)), 1)
+    nb = tf.reduce_sum(tf.square(tf.math.l2_normalize(nodes, -1)), 1)
 
     # na as a row and nb as a column vectors
     na = tf.reshape(na, [-1, 1])
@@ -126,23 +126,23 @@ def model_fn(features, labels, mode, params):
 
     # calculate attention over the graph
     closest_nodes = tf.cast(tf.argmin(distance, -1), tf.int32)
-    print("closest_nodes: " + str(closest_nodes))
+    # print("closest_nodes: " + str(closest_nodes))
 
     # # Write the signals onto these nodes
     positions = tf.where(tf.not_equal(tf.reshape(closest_nodes, [-1, FLAGS.seq_len]), 99999))
-    print("positions: " + str(positions))
+    # print("positions: " + str(positions))
     positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
-    print("positions: " + str(positions))
+    # print("positions: " + str(positions))
     positions = tf.cast(positions, tf.int32)
-    print("positions: " + str(positions))
+    # print("positions: " + str(positions))
     positions = tf.concat([positions, tf.reshape(closest_nodes, [-1, 1])], -1)
-    print("positions: " + str(positions))
+    # print("positions: " + str(positions))
     # print("compressed: " + str(compressed1))
     # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
     projection_signal = tf.reshape(encoded_question, [-1, depth])
-    print("projection_signal: " + str(projection_signal))
+    # print("projection_signal: " + str(projection_signal))
     batch_of_nodes = tf.tensor_scatter_nd_add(tf.reshape(batch_of_nodes, [-1, 512, depth]), positions, projection_signal)
-    print("batch_of_nodes: " + str(batch_of_nodes))
+    # print("batch_of_nodes: " + str(batch_of_nodes))
     batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, depth]))
 
     global_block = blocks.NodesToGlobalsAggregator(tf.math.unsorted_segment_mean)
@@ -379,7 +379,7 @@ def main(argv=None):
             # print("graph_sum0: " + str(result['graph_sum0']))
             # print("graph_sum1: " + str(result['graph_sum1']))
             # print("graph_sum2: " + str(result['graph_sum2']))
-            # print("closest_nodes: " + str(result['closest_nodes']))
+            print("closest_nodes: " + str(result['closest_nodes']))
             # print("mask: " + str(result['mask']))
             # print("input_id: " + str(result['input_id']))
             # print("encoded_question: " + str(np.sum(np.abs(result['encoded_question']), -1)))
