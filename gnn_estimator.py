@@ -86,12 +86,13 @@ def model_fn(features, labels, mode, params):
     padding_mask = tf.reshape(padding_mask, [-1, FLAGS.seq_len, 1])
     sentences = tf.nn.embedding_lookup(word_embedding, sentences)
     sentences = tf.reshape(sentences, [-1, FLAGS.seq_len, depth])
+    sentences = tf.cast(sentences, tf.float32)
     # print("sentences: " + str(sentences))
     # print("padding_mask: " + str(padding_mask))
-    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True)
-    encoded_question = question_encoder(sentences, training=training)
-    encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
-    encoded_question = tf.reshape(tf.cast(encoded_question, tf.float32), [-1, depth])
+    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True, return_state=True)
+    _, encoded_question, _ = question_encoder(sentences, training=training, mask=padding_mask)
+    # encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
+    encoded_question = tf.reshape(tf.tile(encoded_question, [1, FLAGS.seq_len]), [-1, depth])
 
     # The template graph
     nodes = graph_nodes.astype(np.float32)
@@ -114,15 +115,16 @@ def model_fn(features, labels, mode, params):
     # print("batch_of_nodes: " + str(batch_of_nodes))
 
     # Euclidean distance to identify closest nodes
-    na = tf.reduce_sum(tf.square(tf.math.l2_normalize(encoded_question, -1)), 1)
-    nb = tf.reduce_sum(tf.square(tf.math.l2_normalize(nodes, -1)), 1)
+    sentences = tf.reshape(sentences, [-1, depth])
+    na = tf.reduce_sum(tf.square(sentences), 1)
+    nb = tf.reduce_sum(tf.square(nodes), 1)
 
     # na as a row and nb as a column vectors
     na = tf.reshape(na, [-1, 1])
     nb = tf.reshape(nb, [1, -1])
 
     # return pairwise euclidead difference matrix
-    distance = tf.sqrt(tf.maximum(na - 2 * tf.matmul(encoded_question, nodes, False, True) + nb, 0.0))
+    distance = tf.sqrt(tf.maximum(na - 2 * tf.matmul(sentences, nodes, False, True) + nb, 0.0))
 
     # calculate attention over the graph
     closest_nodes = tf.cast(tf.argmin(distance, -1), tf.int32)
@@ -141,7 +143,7 @@ def model_fn(features, labels, mode, params):
     # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
     projection_signal = tf.reshape(encoded_question, [-1, depth])
     # print("projection_signal: " + str(projection_signal))
-    batch_of_nodes = tf.tensor_scatter_nd_add(tf.reshape(batch_of_nodes, [-1, 512, depth]), positions, projection_signal)
+    batch_of_nodes = tf.tensor_scatter_nd_update(tf.reshape(batch_of_nodes, [-1, 512, depth]), positions, projection_signal)
     # print("batch_of_nodes: " + str(batch_of_nodes))
     batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, depth]))
 
