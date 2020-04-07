@@ -22,6 +22,7 @@ from graph_nets import utils_tf
 import sonnet as snt
 import functools
 import os
+import math
 
 
 import tensorflow as tf
@@ -87,114 +88,120 @@ def model_fn(features, labels, mode, params):
     sentences = tf.nn.embedding_lookup(word_embedding, sentences)
     sentences = tf.reshape(sentences, [-1, FLAGS.seq_len, depth])
     sentences = tf.cast(sentences, tf.float32)
+    layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
     # print("sentences: " + str(sentences))
     # print("padding_mask: " + str(padding_mask))
-    question_encoder = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True, return_state=True)
-    _, encoded_question, _ = question_encoder(sentences, training=training, mask=padding_mask)
+    question_encoder1 = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True, return_state=True)
+    question_encoder2 = tf.keras.layers.LSTM(depth, dropout=FLAGS.dropout, return_sequences=True, return_state=True)
+    sequence_output, _, _ = question_encoder1(sentences, training=training, mask=padding_mask)
+    sequence_output = layernorm1(sequence_output)
+    _, final_states, _ = question_encoder2(sequence_output, training=training, mask=padding_mask)
     # encoded_question = tf.cast(padding_mask, tf.float32) * tf.cast(encoded_question, tf.float32)
-    encoded_question = tf.reshape(tf.tile(encoded_question, [1, FLAGS.seq_len]), [-1, depth])
+    # encoded_question = tf.reshape(tf.tile(encoded_question, [1, FLAGS.seq_len]), [-1, depth])
 
     # The template graph
-    nodes = graph_nodes.astype(np.float32)
-    edges = np.ones([int(np.sum(graph_edges)), 1]).astype(np.float32)
-    senders, receivers = np.nonzero(graph_edges)
-    globals = np.zeros(FLAGS.global_size).astype(np.float32)
-
-    graph_dict = {"globals": globals,
-                  "nodes": nodes,
-                  "edges": edges,
-                  "senders": senders,
-                  "receivers": receivers}
-    original_graph = utils_tf.data_dicts_to_graphs_tuple([graph_dict])
-    graph_dict["nodes"] = nodes * 0
-    # print("encoded_question.shape[0]: " + str(encoded_question.shape[0]))
-    batch_of_tensor_data_dicts = [graph_dict for i in range(sentences.shape[0])]
-
-    batch_of_graphs = utils_tf.data_dicts_to_graphs_tuple(batch_of_tensor_data_dicts)
-    batch_of_nodes = batch_of_graphs.nodes
-    # print("batch_of_nodes: " + str(batch_of_nodes))
-
-    # Euclidean distance to identify closest nodes
-    sentences = tf.reshape(sentences, [-1, depth])
-    na = tf.reduce_sum(tf.square(sentences), 1)
-    nb = tf.reduce_sum(tf.square(nodes), 1)
-
-    # na as a row and nb as a column vectors
-    na = tf.reshape(na, [-1, 1])
-    nb = tf.reshape(nb, [1, -1])
-
-    # return pairwise euclidead difference matrix
-    distance = tf.sqrt(tf.maximum(na - 2 * tf.matmul(sentences, nodes, False, True) + nb, 0.0))
-
-    # calculate attention over the graph
-    closest_nodes = tf.cast(tf.argmin(distance, -1), tf.int32)
-    # print("closest_nodes: " + str(closest_nodes))
-
-    # # Write the signals onto these nodes
-    positions = tf.where(tf.not_equal(tf.reshape(closest_nodes, [-1, FLAGS.seq_len]), 99999))
-    # print("positions: " + str(positions))
-    positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
-    # print("positions: " + str(positions))
-    positions = tf.cast(positions, tf.int32)
-    # print("positions: " + str(positions))
-    positions = tf.concat([positions, tf.reshape(closest_nodes, [-1, 1])], -1)
+    # nodes = graph_nodes.astype(np.float32)
+    # edges = np.ones([int(np.sum(graph_edges)), 1]).astype(np.float32)
+    # senders, receivers = np.nonzero(graph_edges)
+    # globals = np.zeros(FLAGS.global_size).astype(np.float32)
+    #
+    # graph_dict = {"globals": globals,
+    #               "nodes": nodes,
+    #               "edges": edges,
+    #               "senders": senders,
+    #               "receivers": receivers}
+    # original_graph = utils_tf.data_dicts_to_graphs_tuple([graph_dict])
+    # graph_dict["nodes"] = nodes * 0
+    # # print("encoded_question.shape[0]: " + str(encoded_question.shape[0]))
+    # batch_of_tensor_data_dicts = [graph_dict for i in range(sentences.shape[0])]
+    #
+    # batch_of_graphs = utils_tf.data_dicts_to_graphs_tuple(batch_of_tensor_data_dicts)
+    # batch_of_nodes = batch_of_graphs.nodes
+    # # print("batch_of_nodes: " + str(batch_of_nodes))
+    #
+    # # Euclidean distance to identify closest nodes
+    # sentences = tf.reshape(sentences, [-1, depth])
+    # na = tf.reduce_sum(tf.square(sentences), 1)
+    # nb = tf.reduce_sum(tf.square(nodes), 1)
+    #
+    # # na as a row and nb as a column vectors
+    # na = tf.reshape(na, [-1, 1])
+    # nb = tf.reshape(nb, [1, -1])
+    #
+    # # return pairwise euclidead difference matrix
+    # distance = tf.sqrt(tf.maximum(na - 2 * tf.matmul(sentences, nodes, False, True) + nb, 0.0))
+    #
+    # # calculate attention over the graph
+    # closest_nodes = tf.cast(tf.argmin(distance, -1), tf.int32)
+    # # print("closest_nodes: " + str(closest_nodes))
+    #
+    # # # Write the signals onto these nodes
+    # positions = tf.where(tf.not_equal(tf.reshape(closest_nodes, [-1, FLAGS.seq_len]), 99999))
+    # # print("positions: " + str(positions))
+    # positions = tf.slice(positions, [0, 0], [-1, 1])  # we only want the first 2 dimensions, since the last dimension is incorrect
+    # # print("positions: " + str(positions))
+    # positions = tf.cast(positions, tf.int32)
+    # # print("positions: " + str(positions))
+    # positions = tf.concat([positions, tf.reshape(closest_nodes, [-1, 1])], -1)
     # print("positions: " + str(positions))
     # print("compressed: " + str(compressed1))
     # print("norm_duplicate: " + str(tf.reshape(norm_duplicate, [-1, 1])))
-    projection_signal = tf.reshape(encoded_question, [-1, depth])
-    # print("projection_signal: " + str(projection_signal))
-    batch_of_nodes = tf.tensor_scatter_nd_update(tf.reshape(batch_of_nodes, [-1, 512, depth]), positions, projection_signal)
-    # print("batch_of_nodes: " + str(batch_of_nodes))
-    batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, depth]))
-
-    global_block = blocks.NodesToGlobalsAggregator(tf.math.unsorted_segment_mean)
-    global_dense = tf.keras.layers.Dense(depth, activation='relu')
-
-    num_recurrent_passes = FLAGS.recurrences
-    previous_graphs = batch_of_graphs
-    original_nodes = tf.reshape(original_graph.nodes, [1, 512, depth])
-    dropout = tf.keras.layers.Dropout(FLAGS.dropout)
-    layernorm_global = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-    layernorm_node = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-    new_global = global_block(previous_graphs)
-    previous_graphs = previous_graphs.replace(globals=global_dense(new_global))
-    previous_graphs = previous_graphs.replace(globals=layernorm_global(previous_graphs.globals))
-    initial_global = previous_graphs.globals
-
-    model_fn = snt.nets.MLP(output_sizes=[depth])
-
-    for unused_pass in range(num_recurrent_passes):
-        # Update the node features with the function
-        updated_nodes = model_fn(previous_graphs.nodes)
-        updated_nodes = layernorm_node(updated_nodes)
-        temporary_graph = previous_graphs.replace(nodes=updated_nodes)
-        graph_sum0 = tf.reduce_sum(tf.reshape(tf.math.abs(temporary_graph.nodes), [-1, 4 * 512 * 300]), -1)
-
-        # Send the node features to the edges that are being sent by that node.
-        nodes_at_edges = blocks.broadcast_sender_nodes_to_edges(temporary_graph)
-        graph_sum1 = tf.reduce_sum(tf.reshape(tf.math.abs(nodes_at_edges), [-1, 4 * 5551 * 300]), -1)
-
-        temporary_graph = temporary_graph.replace(edges=nodes_at_edges)
-
-        # Aggregate the all of the edges received by every node.
-        nodes_with_aggregated_edges = blocks.ReceivedEdgesToNodesAggregator(tf.math.unsorted_segment_mean)(
-            temporary_graph)
-        graph_sum2 = tf.reduce_sum(tf.reshape(tf.math.abs(nodes_with_aggregated_edges), [-1, 4 * 512 * 300]), -1)
-        previous_graphs = previous_graphs.replace(nodes=nodes_with_aggregated_edges)
-
-        current_nodes = previous_graphs.nodes
-        current_nodes = tf.reshape(current_nodes, [-1, 512, depth])
-        current_nodes = dropout(current_nodes, training=training)
-        new_nodes = current_nodes * original_nodes
-        previous_graphs = previous_graphs.replace(nodes=tf.reshape(new_nodes, [-1, depth]))
-        old_global = previous_graphs.globals
-        new_global = global_block(previous_graphs)
-        previous_graphs = previous_graphs.replace(globals=global_dense(new_global))
-        previous_graphs = previous_graphs.replace(globals=layernorm_global(previous_graphs.globals))
-
-    output_global = tf.keras.layers.Dropout(FLAGS.dropout)(previous_graphs.globals, training=training)
+    # projection_signal = tf.reshape(encoded_question, [-1, depth])
+    # # print("projection_signal: " + str(projection_signal))
+    # batch_of_nodes = tf.tensor_scatter_nd_update(tf.reshape(batch_of_nodes, [-1, 512, depth]), positions, projection_signal)
+    # # print("batch_of_nodes: " + str(batch_of_nodes))
+    # batch_of_graphs = batch_of_graphs.replace(nodes=tf.reshape(batch_of_nodes, [-1, depth]))
+    #
+    # global_block = blocks.NodesToGlobalsAggregator(tf.math.unsorted_segment_mean)
+    # global_dense = tf.keras.layers.Dense(depth, activation='relu')
+    #
+    # num_recurrent_passes = FLAGS.recurrences
+    # previous_graphs = batch_of_graphs
+    # original_nodes = tf.reshape(original_graph.nodes, [1, 512, depth])
+    # dropout = tf.keras.layers.Dropout(FLAGS.dropout)
+    # layernorm_global = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+    # layernorm_node = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+    # new_global = global_block(previous_graphs)
+    # previous_graphs = previous_graphs.replace(globals=global_dense(new_global))
+    # previous_graphs = previous_graphs.replace(globals=layernorm_global(previous_graphs.globals))
+    # initial_global = previous_graphs.globals
+    #
+    # model_fn = snt.nets.MLP(output_sizes=[depth])
+    #
+    # for unused_pass in range(num_recurrent_passes):
+    #     # Update the node features with the function
+    #     updated_nodes = model_fn(previous_graphs.nodes)
+    #     updated_nodes = layernorm_node(updated_nodes)
+    #     temporary_graph = previous_graphs.replace(nodes=updated_nodes)
+    #     graph_sum0 = tf.reduce_sum(tf.reshape(tf.math.abs(temporary_graph.nodes), [-1, 4 * 512 * 300]), -1)
+    #
+    #     # Send the node features to the edges that are being sent by that node.
+    #     nodes_at_edges = blocks.broadcast_sender_nodes_to_edges(temporary_graph)
+    #     graph_sum1 = tf.reduce_sum(tf.reshape(tf.math.abs(nodes_at_edges), [-1, 4 * 5551 * 300]), -1)
+    #
+    #     temporary_graph = temporary_graph.replace(edges=nodes_at_edges)
+    #
+    #     # Aggregate the all of the edges received by every node.
+    #     nodes_with_aggregated_edges = blocks.ReceivedEdgesToNodesAggregator(tf.math.unsorted_segment_mean)(
+    #         temporary_graph)
+    #     graph_sum2 = tf.reduce_sum(tf.reshape(tf.math.abs(nodes_with_aggregated_edges), [-1, 4 * 512 * 300]), -1)
+    #     previous_graphs = previous_graphs.replace(nodes=nodes_with_aggregated_edges)
+    #
+    #     current_nodes = previous_graphs.nodes
+    #     current_nodes = tf.reshape(current_nodes, [-1, 512, depth])
+    #     current_nodes = dropout(current_nodes, training=training)
+    #     new_nodes = current_nodes * original_nodes
+    #     previous_graphs = previous_graphs.replace(nodes=tf.reshape(new_nodes, [-1, depth]))
+    #     old_global = previous_graphs.globals
+    #     new_global = global_block(previous_graphs)
+    #     previous_graphs = previous_graphs.replace(globals=global_dense(new_global))
+    #     previous_graphs = previous_graphs.replace(globals=layernorm_global(previous_graphs.globals))
+    #
+    layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+    final_states = layernorm2(final_states)
+    final_states = tf.keras.layers.Dropout(FLAGS.dropout)(final_states, training=training)
     dense_layer = tf.keras.layers.Dense(1)
-    logits = dense_layer(output_global)
+    logits = dense_layer(final_states)
     logits = tf.reshape(logits, [-1, num_choices])
 
     def loss_function(real, pred):
@@ -208,18 +215,18 @@ def model_fn(features, labels, mode, params):
         'prediction': tf.argmax(logits, -1),
         'correct': features["answer_id"],
         'logits': logits,
-        'loss': loss,
-        'output_global': tf.reshape(output_global, [-1, 4, 300]),
-        'initial_global': tf.reshape(initial_global, [-1, 4, 300]),
-        'old_global': tf.reshape(old_global, [-1, 4, 300]),
-        'new_global': tf.reshape(new_global, [-1, 4, 300]),
-        'graph_sum0': graph_sum0,
-        'graph_sum1': graph_sum1,
-        'graph_sum2': graph_sum2,
-        'closest_nodes': tf.reshape(closest_nodes, [-1, 4, FLAGS.seq_len]),
-        'input_id': features["input_ids"],
-        'mask': tf.reshape(padding_mask, [-1, 4, FLAGS.seq_len]),
-        'encoded_question': tf.reshape(encoded_question, [-1, 4, FLAGS.seq_len, depth])
+        'loss': loss
+        # 'output_global': tf.reshape(output_global, [-1, 4, 300]),
+        # 'initial_global': tf.reshape(initial_global, [-1, 4, 300]),
+        # 'old_global': tf.reshape(old_global, [-1, 4, 300]),
+        # 'new_global': tf.reshape(new_global, [-1, 4, 300]),
+        # 'graph_sum0': graph_sum0,
+        # 'graph_sum1': graph_sum1,
+        # 'graph_sum2': graph_sum2,
+        # 'closest_nodes': tf.reshape(closest_nodes, [-1, 4, FLAGS.seq_len]),
+        # 'input_id': features["input_ids"],
+        # 'mask': tf.reshape(padding_mask, [-1, 4, FLAGS.seq_len]),
+        # 'encoded_question': tf.reshape(encoded_question, [-1, 4, FLAGS.seq_len, depth])
     }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
@@ -353,9 +360,7 @@ def main(argv=None):
 
         results = gnn_estimator.predict(
             input_fn=eval_input_fn,
-            predict_keys=['original', 'prediction', 'correct', 'logits', 'loss',
-                          'output_global', 'initial_global', 'new_global', 'old_global', 'graph_sum0', 'graph_sum1', 'graph_sum2',
-                          'closest_nodes', 'mask', 'input_id', 'encoded_question'])
+            predict_keys=['original', 'prediction', 'correct', 'logits', 'loss'])
         total = 0
         correct = 0
 
@@ -381,7 +386,7 @@ def main(argv=None):
             # print("graph_sum0: " + str(result['graph_sum0']))
             # print("graph_sum1: " + str(result['graph_sum1']))
             # print("graph_sum2: " + str(result['graph_sum2']))
-            print("closest_nodes: " + str(result['closest_nodes']))
+            # print("closest_nodes: " + str(result['closest_nodes']))
             # print("mask: " + str(result['mask']))
             # print("input_id: " + str(result['input_id']))
             # print("encoded_question: " + str(np.sum(np.abs(result['encoded_question']), -1)))
