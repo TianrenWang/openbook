@@ -96,6 +96,7 @@ def model_fn(features, labels, mode, params):
 
     # The template graph
     nodes = graph_nodes.astype(np.float32)
+    # np.apply_along_axis(np.random.shuffle, 1, nodes)
     edges = np.ones([int(np.sum(graph_edges)), 1]).astype(np.float32)
     senders, receivers = np.nonzero(graph_edges)
     globals = np.zeros(FLAGS.global_size).astype(np.float32)
