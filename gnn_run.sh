@@ -3,7 +3,7 @@
 #SBATCH --gres=gpu:v100:4        # request GPU "generic resource"
 #SBATCH --cpus-per-task=12   # maximum CPU cores per GPU request: 6 on Cedar, 16$
 #SBATCH --mem=50000M        # memory per node
-#SBATCH --time=0-4:00      # time (DD-HH:MM)
+#SBATCH --time=0-04:00      # time (DD-HH:MM)
 #SBATCH --output=output.out  # %N for node name, %j for jobID
 
 #### local path
